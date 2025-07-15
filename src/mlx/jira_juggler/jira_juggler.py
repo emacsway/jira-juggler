@@ -324,7 +324,7 @@ class JugglerTaskEffort(JugglerTaskProperty):
                     else:
                         self.value = self.MINIMAL_VALUE
             else:
-                self.value = 0
+                self.value = self.DEFAULT_VALUE
         else:
             self.value = self.DEFAULT_VALUE
             logging.warning('No estimate found for %s, assuming %s%s', jira_issue.key, self.DEFAULT_VALUE, self.UNIT)
@@ -441,11 +441,13 @@ class JugglerTask:
     MAX_SUMMARY_LENGTH = 70
     DEFAULT_SUMMARY = 'Task is not initialized'
     TEMPLATE = '''
-task {id} "{description}" {{
+task {id} "{key} {description}" {{
 {tab}Jira "{key}"
 {props}
+{children}
 }}
 '''
+    level = 0
 
     def __init__(self, jira_issue=None):
         logging.info('Create JugglerTask for %s', jira_issue.key)
@@ -495,11 +497,24 @@ task {id} "{description}" {{
             str: String representation of the task in juggler syntax
         """
         props = "".join(map(str, self.properties.values()))
-        return self.TEMPLATE.format(id=to_identifier(self.key),
-                                    key=self.key,
-                                    tab=TAB,
-                                    description=self.summary.replace('\"', '\\\"'),
-                                    props=props)
+        result = self.TEMPLATE.format(
+            id=to_identifier(self.key),
+            key=self.key,
+            tab=TAB,
+            description=self.summary.replace('\"', '\\\"'),
+            props=props,
+            children="\n".join(map(self._make_indentation, self.children))
+        )
+        return result
+
+    @staticmethod
+    def _make_indentation(task):
+        result = []
+        for line in str(task).split("\n"):
+            if len(line):
+                line = "\t" + line
+            result.append(line)
+        return "\n".join(result)
 
     @property
     def is_resolved(self):
@@ -538,6 +553,15 @@ task {id} "{description}" {{
                     elif status in ('closed',) and closed_at_date is None:
                         closed_at_date = parser.isoparse(change.created)
         return closed_at_date
+
+    @property
+    def children(self):
+        self.gateway.query = """parent = %s""" % self.key
+        result = self.gateway.load_issues_from_jira()
+        for i in result:
+            i.level = self.level + 1
+            i.gateway = self.gateway
+        return result
 
 
 class JiraJuggler:
@@ -645,6 +669,7 @@ class JiraJuggler:
         if output:
             with open(output, 'w', encoding='utf-8') as out:
                 for task in juggler_tasks:
+                    task.gateway = self
                     out.write(str(task))
         return juggler_tasks
 
