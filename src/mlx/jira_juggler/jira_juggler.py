@@ -502,7 +502,7 @@ task {id} "{key} {description}" {{
             tab=TAB,
             description=self.summary.replace('\"', '\\\"'),
             props=props,
-            children="\n".join(map(self._make_indentation, self.children))
+            children="".join(map(self._make_indentation, self.children))
         )
         return result
 
@@ -552,14 +552,6 @@ task {id} "{key} {description}" {{
                     elif status in ('closed',) and closed_at_date is None:
                         closed_at_date = parser.isoparse(change.created)
         return closed_at_date
-
-    @property
-    def children(self):
-        self.gateway.query = """parent = %s""" % self.key
-        result = self.gateway.load_issues_from_jira()
-        for i in result:
-            i.gateway = self.gateway
-        return result
 
 
 class JiraJuggler:
@@ -647,6 +639,9 @@ class JiraJuggler:
                 logging.debug(f'Retrieved {issue.key}: {issue.fields.summary}')
                 tasks.append(JugglerTask(issue))
 
+        for task in tasks:
+            self.attach_children(task, depend_on_preceding, sprint_field_name, **kwargs)
+
         self.validate_tasks(tasks)
         if sprint_field_name:
             self.sort_tasks_on_sprint(tasks, sprint_field_name)
@@ -654,6 +649,11 @@ class JiraJuggler:
         if depend_on_preceding:
             self.link_to_preceding_task(tasks, **kwargs)
         return tasks
+
+    def attach_children(self, task, depend_on_preceding, sprint_field_name, **kwargs):
+        self.query = """parent = %s""" % task.key
+        self.issue_count = 0
+        task.children = self.load_issues_from_jira(depend_on_preceding, sprint_field_name, **kwargs)
 
     def juggle(self, output=None, **kwargs):
         """Queries JIRA and generates task-juggler output from given issues
