@@ -447,7 +447,6 @@ task {id} "{key} {description}" {{
 {children}
 }}
 '''
-    level = 0
 
     def __init__(self, jira_issue=None):
         logging.info('Create JugglerTask for %s', jira_issue.key)
@@ -512,7 +511,7 @@ task {id} "{key} {description}" {{
         result = []
         for line in str(task).split("\n"):
             if len(line):
-                line = "\t" + line
+                line = TAB + line
             result.append(line)
         return "\n".join(result)
 
@@ -559,7 +558,6 @@ task {id} "{key} {description}" {{
         self.gateway.query = """parent = %s""" % self.key
         result = self.gateway.load_issues_from_jira()
         for i in result:
-            i.level = self.level + 1
             i.gateway = self.gateway
         return result
 
