@@ -18,15 +18,41 @@ module can convert the JIRA tasks to a gantt chart using the `TaskJuggler <http:
 Installation
 ------------
 
-Installation from PyPI:
+Installation:
 
 .. code::
 
-    pip install mlx.jira-juggler
+    python3 -m venv .env
+    source .env/bin/activate
+    pip install -e 'git+https://github.com/emacsway/jira-juggler.git#egg=mlx.jira-juggler'
+
+-----------
+Preparation
+-----------
+
+Open page https://id.atlassian.com/manage-profile/security/api-tokens and create an API token.
+
+Export environment variables:
+
+.. code::
+
+    export JIRA_API_ENDPOINT="https://your-company.atlassian.net/";
+    export JIRA_USERNAME="your_name@example.com";
+    export JIRA_API_TOKEN="YOURTOKEN";
 
 -----
 Usage
 -----
+
+Export data:
+
+.. code::
+
+    jira-juggler -q "parent = PBI-ID"
+    # or
+    jira-juggler -q "id = PBI-ID"
+
+Where PBI-ID is the epic identity.
 
 See help from python module:
 
