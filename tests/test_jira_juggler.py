@@ -192,7 +192,7 @@ class TestJiraJuggler(unittest.TestCase):
                                                                              self.ASSIGNEE1,
                                                                              [self.ESTIMATE1, None, None],
                                                                              self.DEPENDS1)
-                                                       ], []]
+                                                       ], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog'),
                                                          call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=1, expand='changelog')])
@@ -217,7 +217,7 @@ class TestJiraJuggler(unittest.TestCase):
                                                                              [self.ESTIMATE1, None, None],
                                                                              self.DEPENDS1,
                                                                              email=self.EMAIL1)
-                                                       ], []]
+                                                       ], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog'),
                                                          call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=1, expand='changelog')])
@@ -243,7 +243,7 @@ class TestJiraJuggler(unittest.TestCase):
                                              self.DEPENDS1,
                                              email=self.EMAIL1)
         mocked_issue.fields.assignee.emailAddress = ''
-        jira_mock_object.search_issues.side_effect = [[mocked_issue], []]
+        jira_mock_object.search_issues.side_effect = [[mocked_issue], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog'),
                                                          call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=1, expand='changelog')])
@@ -267,7 +267,7 @@ class TestJiraJuggler(unittest.TestCase):
 
         jira_mock_object.search_issues.side_effect = [[self._mock_jira_issue(self.KEY1,
                                                                              self.SUMMARY1)
-                                                       ], []]
+                                                       ], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog'),
                                                          call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=1, expand='changelog')])
@@ -287,7 +287,7 @@ class TestJiraJuggler(unittest.TestCase):
         jira_mock_object.search_issues.side_effect = [[self._mock_jira_issue(self.KEY1,
                                                                              self.SUMMARY1,
                                                                              estimates=[1, None, None])
-                                                       ], []]
+                                                       ], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog'),
                                                          call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=1, expand='changelog')])
@@ -308,7 +308,7 @@ class TestJiraJuggler(unittest.TestCase):
         jira_mock_object.search_issues.side_effect = [[self._mock_jira_issue(self.KEY1,
                                                                              self.SUMMARY1,
                                                                              depends=['non-existing-key-of-issue'])
-                                                       ], []]
+                                                       ], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog'),
                                                          call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=1, expand='changelog')])
@@ -336,7 +336,7 @@ class TestJiraJuggler(unittest.TestCase):
                                                                              self.ASSIGNEE2,
                                                                              [self.ESTIMATE2, None, None],
                                                                              self.DEPENDS2),
-                                                       ], []]
+                                                       ], [], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog'),
                                                          call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=2, expand='changelog')])
@@ -376,7 +376,7 @@ class TestJiraJuggler(unittest.TestCase):
                                                                              self.ASSIGNEE3,
                                                                              [self.ESTIMATE3, None, None],
                                                                              self.DEPENDS3),
-                                                       ], []]
+                                                       ], [], [], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog'),
                                                          call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=3, expand='changelog')])
@@ -457,7 +457,7 @@ class TestJiraJuggler(unittest.TestCase):
                                                                              self.DEPENDS1,
                                                                              histories=histories,
                                                                              status="Resolved"),
-                                                       ], []]
+                                                       ], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog')])
         self.assertEqual(1, len(issues))
@@ -499,7 +499,7 @@ class TestJiraJuggler(unittest.TestCase):
                                                                              self.DEPENDS1,
                                                                              histories=histories,
                                                                              status="Closed"),
-                                                       ], []]
+                                                       ], [], []]
         issues = juggler.juggle()
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog')])
         self.assertEqual(1, len(issues))
@@ -554,28 +554,28 @@ class TestJiraJuggler(unittest.TestCase):
                                                                              [self.ESTIMATE1, None, None],
                                                                              [self.KEY1, self.KEY2],
                                                                              status="Open"),
-                                                       ], []]
+                                                       ], [], [], [], [], [], []]
         issues = juggler.juggle(depend_on_preceding=True, weeklymax=1.0, current_date=parser.isoparse('2021-08-23T13:30'))
         jira_mock_object.search_issues.assert_has_calls([call(self.QUERY, maxResults=dut.JIRA_PAGE_SIZE, startAt=0, expand='changelog')])
         self.assertEqual(5, len(issues))
         self.assertEqual(self.ASSIGNEE1, issues[0].properties['allocate'].value)
         self.assertEqual(self.ESTIMATE1 / self.SECS_PER_DAY, issues[0].properties['effort'].value)
-        self.assertEqual('    end 2021-08-18-18:00-+0200\n', str(issues[0].properties['time']))
+        self.assertEqual(dut.TAB + 'end 2021-08-18-18:00-+0200\n', str(issues[0].properties['time']))
         self.assertEqual('', str(issues[0].properties['depends']))
 
         self.assertEqual(self.ASSIGNEE1, issues[1].properties['allocate'].value)
         self.assertEqual(3.2 + 2.4, issues[1].properties['effort'].value)
-        self.assertEqual('    start %{2021-08-23-13:00 - 9.125d}\n', str(issues[1].properties['time']))  # 3.2 days spent
+        self.assertEqual(dut.TAB + 'start %{2021-08-23-13:00 - 9.125d}\n', str(issues[1].properties['time']))  # 3.2 days spent
         self.assertEqual('', str(issues[1].properties['depends']))
 
         self.assertEqual(self.ASSIGNEE1, issues[2].properties['allocate'].value)
         self.assertEqual(self.ESTIMATE3 / self.SECS_PER_DAY, issues[2].properties['effort'].value)
-        self.assertEqual(f'    depends !{self.ID1}, !{self.ID2}\n', str(issues[2].properties['depends']))
+        self.assertEqual(f'{dut.TAB}depends !{self.ID1}, !{self.ID2}\n', str(issues[2].properties['depends']))
 
         self.assertEqual('', str(issues[3].properties['depends']))
-        self.assertEqual('    start 2021-08-23-13:00\n', str(issues[3].properties['time']))  # start on current date
+        self.assertEqual(dut.TAB + 'start 2021-08-23-13:00\n', str(issues[3].properties['time']))  # start on current date
 
-        self.assertEqual(f'    depends !{self.ID1}, !{self.ID2}\n', str(issues[4].properties['depends']))
+        self.assertEqual(f'{dut.TAB}depends !{self.ID1}, !{self.ID2}\n', str(issues[4].properties['depends']))
         self.assertEqual('', str(issues[4].properties['time']))  # no start date as it depends on an unresolved task
 
     def _mock_jira_issue(self, key, summary, assignee='', estimates=[], depends=[], histories=[], status="Open", email=''):
