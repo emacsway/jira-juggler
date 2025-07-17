@@ -25,7 +25,7 @@ DEFAULT_OUTPUT = 'jira_export.tjp'
 
 JIRA_PAGE_SIZE = 50
 
-TAB = ' ' * 4
+TAB = ' ' * 2
 
 
 def fetch_credentials():
