@@ -4,9 +4,14 @@ Jira to task-juggler extraction script
 
 This script queries Jira, and generates a task-juggler input file to generate a Gantt chart.
 """
+import abc
 import argparse
+import functools
 import logging
+import math
+import operator
 import re
+import typing
 from abc import ABC
 from datetime import datetime, time
 from functools import cmp_to_key
@@ -290,6 +295,144 @@ class JugglerTaskAllocate(JugglerTaskProperty):
                 self.value = self.DEFAULT_VALUE
 
 
+class IPertEstimate(metaclass=abc.ABCMeta):
+
+    @property
+    @abc.abstractmethod
+    def optimistic(self) -> float:
+        raise NotImplementedError
+
+    @property
+    @abc.abstractmethod
+    def nominal(self) -> float:
+        raise NotImplementedError
+
+    @property
+    @abc.abstractmethod
+    def pessimistic(self) -> float:
+        raise NotImplementedError
+
+    @property
+    @abc.abstractmethod
+    def expected_duration(self) -> float:
+        raise NotImplementedError
+
+    @property
+    @abc.abstractmethod
+    def standard_deviation(self) -> float:
+        raise NotImplementedError
+
+
+class EmptyPertEstimate(IPertEstimate):
+
+    @property
+    def optimistic(self) -> float:
+        return 0
+
+    @property
+    def nominal(self) -> float:
+        return 0
+
+    @property
+    def pessimistic(self) -> float:
+        return 0
+
+    @property
+    def expected_duration(self) -> float:
+        return 0
+
+    @property
+    def standard_deviation(self) -> float:
+        return 0
+
+
+class PertEstimate:
+    _optimistic: float
+    _nominal: float
+    _pessimistic: float
+
+    def __init__(self, optimistic: float, nominal: float, pessimistic: float):
+        assert optimistic is not None
+        assert nominal is not None
+        assert nominal >= optimistic
+        assert pessimistic is not None
+        assert pessimistic >= nominal
+
+        self._optimistic = optimistic
+        self._nominal = nominal
+        self._pessimistic = pessimistic
+
+    @property
+    def optimistic(self) -> float:
+        return self._optimistic
+
+    @property
+    def nominal(self) -> float:
+        return self._nominal
+
+    @property
+    def pessimistic(self) -> float:
+        return self._pessimistic
+
+    @property
+    def expected_duration(self) -> float:
+        return (self.optimistic + 4*self.nominal + self.pessimistic) / 6
+
+    @property
+    def standard_deviation(self) -> float:
+        return (self.pessimistic - self.optimistic) / 6
+
+
+class CompositePertEstimate(IPertEstimate):
+    _children: typing.Iterable[IPertEstimate]
+
+    def __init__(self, children: typing.Iterable[IPertEstimate]):
+        self._children = children
+
+    @property
+    def optimistic(self) -> float:
+        return functools.reduce(
+            operator.add,
+            map(operator.attrgetter('optimistic'), self._children),
+            0
+        )
+
+    @property
+    def nominal(self) -> float:
+        return functools.reduce(
+            operator.add,
+            map(operator.attrgetter('nominal'), self._children),
+            0
+        )
+
+    @property
+    def pessimistic(self) -> float:
+        return functools.reduce(
+            operator.add,
+            map(operator.attrgetter('pessimistic'), self._children),
+            0
+        )
+
+    @property
+    def expected_duration(self) -> float:
+        return functools.reduce(
+            operator.add,
+            map(operator.attrgetter('expected_duration'), self._children),
+            0
+        )
+
+    @property
+    def standard_deviation(self) -> float:
+        return math.sqrt(functools.reduce(
+            operator.add,
+            map(
+                functools.partial(pow, exp=2),
+                map(operator.attrgetter('expected_duration'), self._children)
+            ),
+            0
+        ))
+
+
 class JugglerTaskEffort(JugglerTaskProperty):
     """Class for the effort (estimate) of a juggler task"""
 
@@ -301,6 +444,7 @@ class JugglerTaskEffort(JugglerTaskProperty):
     MINIMAL_VALUE = 1.0 / 8
     DEFAULT_VALUE = MINIMAL_VALUE
     SUFFIX = UNIT
+    pert: IPertEstimate = EmptyPertEstimate()
 
     def load_from_jira_issue(self, jira_issue):
         """Loads the object with data from a Jira issue
@@ -309,7 +453,10 @@ class JugglerTaskEffort(JugglerTaskProperty):
             jira_issue (jira.resources.Issue): The Jira issue to load from
         """
         if hasattr(jira_issue.fields, 'timeoriginalestimate'):
-            estimated_time = jira_issue.fields.timeoriginalestimate
+            if self.pert.expected_duration:
+                estimated_time = self.pert.expected_duration
+            else:
+                estimated_time = jira_issue.fields.timeoriginalestimate
             if estimated_time is not None:
                 self.value = estimated_time / self.FACTOR
                 logged_time = jira_issue.fields.timespent if jira_issue.fields.timespent else 0
@@ -343,6 +490,19 @@ class JugglerTaskEffort(JugglerTaskProperty):
         elif self.value < self.MINIMAL_VALUE:
             logging.warning('Estimate %s%s too low for %s, assuming %s%s', self.value, self.UNIT, task.key, self.MINIMAL_VALUE, self.UNIT)
             self.value = self.MINIMAL_VALUE
+
+    def __str__(self):
+        result = super().__str__()
+        result += self.TEMPLATE.format(
+            prop='StDev',
+            value=self.pert.standard_deviation
+        )
+        if not isinstance(self.pert, CompositePertEstimate):
+            result += TAB + """${pert "%s" "%s" "%s"}\n""" % (
+                self.pert.optimistic,
+                self.pert.nominal,
+                self.pert.pessimistic
+            )
 
 
 class JugglerTaskDepends(JugglerTaskProperty):
@@ -437,6 +597,7 @@ class JugglerTaskTime(JugglerTaskProperty):
 class JugglerTask:
     """Class for a task for Task-Juggler"""
 
+    children: typing.Collection['JugglerTask']
     DEFAULT_KEY = 'NOT_INITIALIZED'
     MAX_SUMMARY_LENGTH = 70
     DEFAULT_SUMMARY = 'Task is not initialized'
@@ -640,7 +801,8 @@ class JiraJuggler:
                 tasks.append(JugglerTask(issue))
 
         for task in tasks:
-            self.attach_children(task, depend_on_preceding, sprint_field_name, **kwargs)
+            self._attach_children(task, depend_on_preceding, sprint_field_name, **kwargs)
+            self._attach_pert_estimate(task)
 
         self.validate_tasks(tasks)
         if sprint_field_name:
@@ -650,10 +812,33 @@ class JiraJuggler:
             self.link_to_preceding_task(tasks, **kwargs)
         return tasks
 
-    def attach_children(self, task, depend_on_preceding, sprint_field_name, **kwargs):
+    def _attach_children(self, task, depend_on_preceding, sprint_field_name, **kwargs):
         self.query = """parent = %s""" % task.key
         self.issue_count = 0
         task.children = self.load_issues_from_jira(depend_on_preceding, sprint_field_name, **kwargs)
+
+    def _attach_pert_estimate(self, task: JugglerTask):
+        if len(task.children) > 0:
+            task.properties['effort'].pert = CompositePertEstimate(
+                [i.properties['effort'].pert for i in task.children]
+            )
+        else:
+            task.properties['effort'].pert = self.do_get_pert_estimate(task)
+
+    def do_get_pert_estimate(self, task: JugglerTask):
+        try:
+            pert_response = jirahandle.issue_property(task.key, 'pert-estimation')
+        except JIRAError as e:
+            if e.status_code == 404:
+                return EmptyPertEstimate
+            else:
+                raise
+        else:
+            return PertEstimate(
+                optimistic=pert_response.value['optimistic'],
+                nominal=pert_response.value['nominal'],
+                pessimistic=pert_response.value['pessimistic'],
+            )
 
     def juggle(self, output=None, **kwargs):
         """Queries JIRA and generates task-juggler output from given issues
