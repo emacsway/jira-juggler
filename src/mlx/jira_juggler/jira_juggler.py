@@ -830,7 +830,7 @@ class JiraJuggler:
             pert_response = jirahandle.issue_property(task.key, 'pert-estimation')
         except JIRAError as e:
             if e.status_code == 404:
-                return EmptyPertEstimate
+                return EmptyPertEstimate()
             else:
                 raise
         else:

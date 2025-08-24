@@ -60,6 +60,14 @@ ISSUE_LINK_TYPES = [
 ]
 
 
+class JiraJuggler(dut.JiraJuggler):
+    def do_get_pert_estimate(self, task: dut.JugglerTask):
+        return dut.EmptyPertEstimate()
+
+
+dut.JiraJuggler = JiraJuggler
+
+
 class TestJiraJuggler(unittest.TestCase):
     '''
     Testing JiraJuggler interface
