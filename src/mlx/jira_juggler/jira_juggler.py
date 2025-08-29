@@ -26,7 +26,7 @@ from natsort import natsorted, ns
 
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
-DEFAULT_OUTPUT = 'jira_export.tjp'
+DEFAULT_OUTPUT = 'jira_export.tji'
 
 JIRA_PAGE_SIZE = 50
 
@@ -1050,7 +1050,7 @@ def main():
     argpar.add_argument('-q', '--query', required=True,
                         help='Query to perform on JIRA server')
     argpar.add_argument('-o', '--output', default=DEFAULT_OUTPUT,
-                        help='Output .tjp file for task-juggler')
+                        help='Output .tjp or .tji file for task-juggler')
     argpar.add_argument('-L', '--links', nargs='*',
                         help="Specific issue link type inward/outward links to consider for TaskJuggler's 'depends' "
                         "keyword, e.g. 'depends on'. "
