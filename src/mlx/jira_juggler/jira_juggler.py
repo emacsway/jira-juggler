@@ -608,7 +608,6 @@ class JugglerTask:
     DEFAULT_SUMMARY = 'Task is not initialized'
     TEMPLATE = '''
 task {id} "{key} {description}" {{
-{tab}Jira "{key}"
 {props}
 {children}
 }}
