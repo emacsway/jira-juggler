@@ -452,11 +452,11 @@ class JugglerTaskEffort(JugglerTaskProperty):
         Args:
             jira_issue (jira.resources.Issue): The Jira issue to load from
         """
-        if hasattr(jira_issue.fields, 'timeoriginalestimate'):
-            if self.pert.expected_duration:
-                estimated_time = self.pert.expected_duration
-            else:
-                estimated_time = jira_issue.fields.timeoriginalestimate
+        self.pert = jira_issue.pert
+        if self.pert.expected_duration:
+            self.value = round(self.pert.expected_duration, 5)
+        elif hasattr(jira_issue.fields, 'timeoriginalestimate'):
+            estimated_time = jira_issue.fields.timeoriginalestimate
             if estimated_time is not None:
                 self.value = estimated_time / self.FACTOR
                 logged_time = jira_issue.fields.timespent if jira_issue.fields.timespent else 0
@@ -494,8 +494,12 @@ class JugglerTaskEffort(JugglerTaskProperty):
     def __str__(self):
         result = super().__str__()
         result += self.TEMPLATE.format(
-            prop='StDev',
-            value=self.pert.standard_deviation
+            prop='stdev',
+            value=self.VALUE_TEMPLATE.format(
+                prefix='',
+                value=round(self.pert.standard_deviation, 5),
+                suffix='d'
+            )
         )
         if not isinstance(self.pert, CompositePertEstimate):
             result += TAB + """${pert "%s" "%s" "%s"}\n""" % (
@@ -503,6 +507,7 @@ class JugglerTaskEffort(JugglerTaskProperty):
                 self.pert.nominal,
                 self.pert.pessimistic
             )
+        return result
 
 
 class JugglerTaskDepends(JugglerTaskProperty):
@@ -637,6 +642,7 @@ task {id} "{key} {description}" {{
         self.properties['effort'] = JugglerTaskEffort(jira_issue)
         self.properties['depends'] = JugglerTaskDepends(jira_issue)
         self.properties['time'] = JugglerTaskTime()
+        self.children = [JugglerTask(child) for child in jira_issue.children]
 
     def validate(self, tasks, property_identifier):
         """Validates (and corrects) the current task
@@ -650,13 +656,23 @@ task {id} "{key} {description}" {{
             logging.error('Found a task which is not initialized')
         self.properties[property_identifier].validate(self, tasks)
 
+        for task in tasks:
+            if task.children:
+                self.validate(task.children, property_identifier)
+
     def __str__(self):
         """Converts the JugglerTask to the task juggler syntax
 
         Returns:
             str: String representation of the task in juggler syntax
         """
-        props = "".join(map(str, self.properties.values()))
+        props = list()
+        for k, v in self.properties.items():
+            if k in ('effort', 'allocate',) and self.children:
+                continue
+            props.append(str(v))
+
+        props = "".join(props)
         result = self.TEMPLATE.format(
             id=to_identifier(self.key),
             key=self.key,
@@ -736,13 +752,12 @@ class JiraJuggler:
         jirahandle = JIRA(endpoint, basic_auth=(user, token))
         logging.info('Query: %s', query)
         self.query = query
-        self.issue_count = 0
 
         all_jira_link_types = jirahandle.issue_link_types()
         JugglerTaskDepends.links = determine_links(all_jira_link_types, links)
 
-    @staticmethod
-    def validate_tasks(tasks):
+    @classmethod
+    def validate_tasks(cls, tasks):
         """Validates (and corrects) tasks
 
         Args:
@@ -763,11 +778,22 @@ class JiraJuggler:
         Returns:
             list: A list of JugglerTask instances
         """
-        tasks = []
+        tasks = [JugglerTask(issue) for issue in self._load_issues(self.query)]
+        self.validate_tasks(tasks)
+        if sprint_field_name:
+            self.sort_tasks_on_sprint(tasks, sprint_field_name)
+        tasks.sort(key=cmp_to_key(self.compare_status))
+        if depend_on_preceding:
+            self.link_to_preceding_task(tasks, **kwargs)
+        return tasks
+
+    def _load_issues(self, query):
+        issue_count = 0
+        result = []
         busy = True
         while busy:
             try:
-                issues = jirahandle.search_issues(self.query, maxResults=JIRA_PAGE_SIZE, startAt=self.issue_count,
+                issues = jirahandle.search_issues(query, maxResults=JIRA_PAGE_SIZE, startAt=issue_count,
                                                   expand='changelog')
             except JIRAError as err:
                 logging.error(f'Failed to query JIRA: {err}')
@@ -795,39 +821,31 @@ class JiraJuggler:
             if len(issues) <= 0:
                 busy = False
 
-            self.issue_count += len(issues)
+            issue_count += len(issues)
             for issue in issues:
                 logging.debug(f'Retrieved {issue.key}: {issue.fields.summary}')
-                tasks.append(JugglerTask(issue))
+                result.append(issue)
 
-        for task in tasks:
-            self._attach_children(task, depend_on_preceding, sprint_field_name, **kwargs)
-            self._attach_pert_estimate(task)
+        for issue in result:
+            self._attach_children(issue)
+            self._attach_pert_estimate(issue)
 
-        self.validate_tasks(tasks)
-        if sprint_field_name:
-            self.sort_tasks_on_sprint(tasks, sprint_field_name)
-        tasks.sort(key=cmp_to_key(self.compare_status))
-        if depend_on_preceding:
-            self.link_to_preceding_task(tasks, **kwargs)
-        return tasks
+        return result
 
-    def _attach_children(self, task, depend_on_preceding, sprint_field_name, **kwargs):
-        self.query = """parent = %s""" % task.key
-        self.issue_count = 0
-        task.children = self.load_issues_from_jira(depend_on_preceding, sprint_field_name, **kwargs)
+    def _attach_children(self, issue):
+        issue.children = self._load_issues("""parent = %s""" % issue.key)
 
-    def _attach_pert_estimate(self, task: JugglerTask):
-        if len(task.children) > 0:
-            task.properties['effort'].pert = CompositePertEstimate(
-                [i.properties['effort'].pert for i in task.children]
+    def _attach_pert_estimate(self, issue):
+        if len(issue.children) > 0:
+            issue.pert = CompositePertEstimate(
+                [i.pert for i in issue.children]
             )
         else:
-            task.properties['effort'].pert = self.do_get_pert_estimate(task)
+            issue.pert = self.do_get_pert_estimate(issue)
 
-    def do_get_pert_estimate(self, task: JugglerTask):
+    def do_get_pert_estimate(self, issue):
         try:
-            pert_response = jirahandle.issue_property(task.key, 'pert-estimation')
+            pert_response = jirahandle.issue_property(issue.key, 'pert-estimation')
         except JIRAError as e:
             if e.status_code == 404:
                 return EmptyPertEstimate()
@@ -835,9 +853,9 @@ class JiraJuggler:
                 raise
         else:
             return PertEstimate(
-                optimistic=pert_response.value['optimistic'],
-                nominal=pert_response.value['nominal'],
-                pessimistic=pert_response.value['pessimistic'],
+                optimistic=pert_response.value.optimistic,
+                nominal=pert_response.value.nominal,
+                pessimistic=pert_response.value.pessimistic,
             )
 
     def juggle(self, output=None, **kwargs):
