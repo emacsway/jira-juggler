@@ -454,7 +454,7 @@ class JugglerTaskEffort(JugglerTaskProperty):
         """
         self.pert = jira_issue.pert
         if self.pert.expected_duration:
-            self.value = round(self.pert.expected_duration, 5)
+            self.value = round(self.pert.expected_duration, 3)
         elif hasattr(jira_issue.fields, 'timeoriginalestimate'):
             estimated_time = jira_issue.fields.timeoriginalestimate
             if estimated_time is not None:
@@ -497,7 +497,7 @@ class JugglerTaskEffort(JugglerTaskProperty):
             prop='stdev',
             value=self.VALUE_TEMPLATE.format(
                 prefix='',
-                value=round(self.pert.standard_deviation, 5),
+                value=round(self.pert.standard_deviation, 3),
                 suffix='d'
             )
         )
