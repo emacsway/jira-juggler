@@ -271,7 +271,7 @@ class JugglerTaskAllocate(JugglerTaskProperty):
         Args:
             jira_issue (jira.resources.Issue): The Jira issue to load from
         """
-        if jira_issue.fields.status.name in ('Closed', 'Resolved'):
+        if jira_issue.fields.status.name in ('Closed', 'Resolved', 'Merged to Dev'):
             before_resolved = False
             for change in sorted(jira_issue.changelog.histories, key=attrgetter('created'), reverse=True):
                 for item in change.items:
@@ -460,7 +460,7 @@ class JugglerTaskEffort(JugglerTaskProperty):
             if estimated_time is not None:
                 self.value = estimated_time / self.FACTOR
                 logged_time = jira_issue.fields.timespent if jira_issue.fields.timespent else 0
-                if jira_issue.fields.status.name in ('Closed', 'Resolved'):
+                if jira_issue.fields.status.name in ('Closed', 'Resolved', 'Merged to Dev'):
                     # resolved ticket: prioritize Logged time over Estimated
                     if logged_time:
                         self.value = logged_time / self.FACTOR
@@ -503,9 +503,9 @@ class JugglerTaskEffort(JugglerTaskProperty):
         )
         if not isinstance(self.pert, CompositePertEstimate):
             result += TAB + """${pert "%s" "%s" "%s"}\n""" % (
-                self.pert.optimistic,
-                self.pert.nominal,
-                self.pert.pessimistic
+                self.pert.optimistic or self.MINIMAL_VALUE,
+                self.pert.nominal or self.MINIMAL_VALUE,
+                self.pert.pessimistic or self.MINIMAL_VALUE
             )
         return result
 
@@ -580,6 +580,19 @@ class JugglerTaskTime(JugglerTaskProperty):
     DEFAULT_VALUE = ''
     PREFIX = ''
 
+    def load_from_jira_issue(self, jira_issue):
+        dt = self.do_get_start_date(jira_issue)
+        if dt:
+            self.name = 'start'
+            self.value = dt
+
+    def do_get_start_date(self, issue):
+        dt = getattr(issue.fields, 'customfield_10014', None)
+        if dt:
+            dt = datetime.strptime(dt, "%Y-%m-%d").date()
+            return dt
+        return None
+
     def validate(self, *_):
         """Validates the current task property"""
         if not self.is_empty:
@@ -597,6 +610,18 @@ class JugglerTaskTime(JugglerTaskProperty):
             return self.TEMPLATE.format(prop=self.name,
                                         value=self.value)
         return ''
+
+
+class JugglerTaskComplete(JugglerTaskProperty):
+    DEFAULT_NAME = 'complete'
+    DEFAULT_VALUE = 0
+
+    def load_from_jira_issue(self, jira_issue):
+        if jira_issue.fields.status.name in ('Closed', 'Resolved', 'Merged to Dev'):
+            self.value = 100
+        progress = getattr(jira_issue.fields, 'progress', None)
+        if progress and progress.total:
+            self.value = math.ceil(100 * progress.progress / progress.total)
 
 
 class JugglerTask:
@@ -640,7 +665,8 @@ task {id} "{key} {description}" {{
         self.properties['allocate'] = JugglerTaskAllocate(jira_issue)
         self.properties['effort'] = JugglerTaskEffort(jira_issue)
         self.properties['depends'] = JugglerTaskDepends(jira_issue)
-        self.properties['time'] = JugglerTaskTime()
+        self.properties['time'] = JugglerTaskTime(jira_issue)
+        self.properties['complete'] = JugglerTaskComplete(jira_issue)
         self.children = [JugglerTask(child) for child in jira_issue.children]
 
     def validate(self, tasks, property_identifier):
@@ -667,7 +693,7 @@ task {id} "{key} {description}" {{
         """
         props = list()
         for k, v in self.properties.items():
-            if k in ('effort', 'allocate',) and self.children:
+            if k in ('effort', 'allocate', 'complete',) and self.children:
                 continue
             props.append(str(v))
 
@@ -694,7 +720,7 @@ task {id} "{key} {description}" {{
     @property
     def is_resolved(self):
         """bool: True if JIRA issue has been approved/resolved/closed; False otherwise"""
-        return self.issue is not None and self.issue.fields.status.name in ('Approved', 'Resolved', 'Closed')
+        return self.issue is not None and self.issue.fields.status.name in ('Approved', 'Resolved', 'Closed', 'Merged to Dev')
 
     @property
     def resolved_at_repr(self):
