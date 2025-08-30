@@ -581,6 +581,12 @@ class JugglerTaskTime(JugglerTaskProperty):
     PREFIX = ''
 
     def load_from_jira_issue(self, jira_issue):
+        """
+        if not self.do_has_been_started(jira_issue) and not jira_issue.children:
+            self.name = 'fact:start'
+            self.value = datetime.now().date()
+        """
+
         dt = self.do_get_start_date(jira_issue)
         if dt:
             self.name = 'start'
@@ -593,10 +599,17 @@ class JugglerTaskTime(JugglerTaskProperty):
             return dt
         return None
 
+    def do_has_been_started(self, issue):
+        if issue.fields.status.name not in ('Closed', 'Resolved', 'Merged to Dev'):
+            progress = getattr(issue.fields, 'progress', None)
+            if progress and not progress.progress:
+                return False
+        return True
+
     def validate(self, *_):
         """Validates the current task property"""
         if not self.is_empty:
-            valid_names = ('start', 'end')
+            valid_names = ('start', 'fact:start', 'end', 'fact:end',)
             if self.name not in valid_names:
                 raise ValueError(f'The name of {self.__class__.__name__} is invalid; expected a value in {valid_names}')
 
