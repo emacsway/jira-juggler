@@ -27,6 +27,7 @@ from natsort import natsorted, ns
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
 DEFAULT_OUTPUT = 'jira_export.tji'
+DONE_STATUSES = ('Approved', 'Resolved', 'Closed', 'Merged to Dev')
 
 JIRA_PAGE_SIZE = 50
 
@@ -271,7 +272,7 @@ class JugglerTaskAllocate(JugglerTaskProperty):
         Args:
             jira_issue (jira.resources.Issue): The Jira issue to load from
         """
-        if jira_issue.fields.status.name in ('Closed', 'Resolved', 'Merged to Dev'):
+        if jira_issue.fields.status.name in DONE_STATUSES:
             before_resolved = False
             for change in sorted(jira_issue.changelog.histories, key=attrgetter('created'), reverse=True):
                 for item in change.items:
@@ -283,7 +284,7 @@ class JugglerTaskAllocate(JugglerTaskProperty):
                         else:
                             self.value = to_username(item.to)
                             return  # got last assignee before transition to Approved/Resolved status
-                    elif item.field.lower() == 'status' and item.toString.lower() in ('approved', 'resolved'):
+                    elif item.field.lower() == 'status' and item.toString.lower() in ('approved', 'resolved', 'closed', 'merged to dev'):
                         before_resolved = True
                         if self.value and self.value != self.DEFAULT_VALUE:
                             return  # assignee was changed after transition to Closed/Resolved status
@@ -460,7 +461,7 @@ class JugglerTaskEffort(JugglerTaskProperty):
             if estimated_time is not None:
                 self.value = estimated_time / self.FACTOR
                 logged_time = jira_issue.fields.timespent if jira_issue.fields.timespent else 0
-                if jira_issue.fields.status.name in ('Closed', 'Resolved', 'Merged to Dev'):
+                if jira_issue.fields.status.name in DONE_STATUSES:
                     # resolved ticket: prioritize Logged time over Estimated
                     if logged_time:
                         self.value = logged_time / self.FACTOR
@@ -581,16 +582,17 @@ class JugglerTaskTime(JugglerTaskProperty):
     PREFIX = ''
 
     def load_from_jira_issue(self, jira_issue):
-        """
-        if not self.do_has_been_started(jira_issue) and not jira_issue.children:
-            self.name = 'fact:start'
-            self.value = datetime.now().date()
-        """
-
-        dt = self.do_get_start_date(jira_issue)
-        if dt:
-            self.name = 'start'
-            self.value = dt
+        start = self.do_get_start_date(jira_issue)
+        fact_start = self.do_determine_fact_start_date(jira_issue)
+        fact_end = self.do_determine_fact_end_date(jira_issue)
+        logging.debug("""Date: %s %r %r""", jira_issue.key, start, fact_start, fact_end)
+        if fact_end:
+            self.name, self.value = 'fact:end', to_juggler_date(fact_end)
+        elif fact_start:
+            self.name, self.value = 'fact:start', to_juggler_date(fact_start)
+        elif start:
+            self.name, self.value = 'start', to_juggler_date(start)
+        logging.debug("""Set date: "%s", "%r", "%r""""", jira_issue.key, self.name, self.value)
 
     def do_get_start_date(self, issue):
         dt = getattr(issue.fields, 'customfield_10014', None)
@@ -599,12 +601,29 @@ class JugglerTaskTime(JugglerTaskProperty):
             return dt
         return None
 
-    def do_has_been_started(self, issue):
-        if issue.fields.status.name not in ('Closed', 'Resolved', 'Merged to Dev'):
-            progress = getattr(issue.fields, 'progress', None)
-            if progress and not progress.progress:
-                return False
-        return True
+    def do_determine_fact_start_date(self, issue):
+        dt = None
+        for change in sorted(issue.changelog.histories, key=attrgetter('created'), reverse=False):
+            for item in change.items:
+                if item.field.lower() == 'status':
+                    status = item.toString.lower()
+                    if status in ('in progress',):
+                        return parser.isoparse(change.created)
+                    elif status in ('closed',) and dt is None:
+                        dt = parser.isoparse(change.created)
+        return dt
+
+    def do_determine_fact_end_date(self, issue):
+        dt = None
+        for change in sorted(issue.changelog.histories, key=attrgetter('created'), reverse=True):
+            for item in change.items:
+                if item.field.lower() == 'status':
+                    status = item.toString.lower()
+                    if status in ('approved', 'resolved', 'merged to dev'):
+                        return parser.isoparse(change.created)
+                    elif status in ('closed',) and dt is None:
+                        dt = parser.isoparse(change.created)
+        return dt
 
     def validate(self, *_):
         """Validates the current task property"""
@@ -630,11 +649,15 @@ class JugglerTaskComplete(JugglerTaskProperty):
     DEFAULT_VALUE = 0
 
     def load_from_jira_issue(self, jira_issue):
-        if jira_issue.fields.status.name in ('Closed', 'Resolved', 'Merged to Dev'):
-            self.value = 100
         progress = getattr(jira_issue.fields, 'progress', None)
-        if progress and progress.total:
+        if progress and progress.progress and progress.total:
             self.value = math.ceil(100 * progress.progress / progress.total)
+        elif jira_issue.fields.status.name in DONE_STATUSES:
+            self.value = 100
+        elif jira_issue.fields.status.name in ('Ready for Code Review',):
+            self.value = 80
+        elif jira_issue.fields.status.name in ('In Progress',):
+            self.value = 50
 
 
 class JugglerTask:
@@ -762,7 +785,7 @@ task {id} "{key} {description}" {{
             for item in change.items:
                 if item.field.lower() == 'status':
                     status = item.toString.lower()
-                    if status in ('approved', 'resolved'):
+                    if status in ('approved', 'resolved', 'merged to dev'):
                         return parser.isoparse(change.created)
                     elif status in ('closed',) and closed_at_date is None:
                         closed_at_date = parser.isoparse(change.created)
@@ -788,6 +811,8 @@ class JiraJuggler:
 
         global jirahandle
         jirahandle = JIRA(endpoint, basic_auth=(user, token))
+        if 'ORDER BY' not in query.upper():
+            query = "%s ORDER BY priority DESC, created ASC" % query
         logging.info('Query: %s', query)
         self.query = query
 
@@ -862,6 +887,10 @@ class JiraJuggler:
             issue_count += len(issues)
             for issue in issues:
                 logging.debug(f'Retrieved {issue.key}: {issue.fields.summary}')
+                if issue.fields.status.name == "Closed" and issue.fields.resolution.name == "Won't Do":
+                    continue
+                elif issue.fields.status.name == "Cancelled":
+                    continue
                 result.append(issue)
 
         for issue in result:
@@ -871,7 +900,7 @@ class JiraJuggler:
         return result
 
     def _attach_children(self, issue):
-        issue.children = self._load_issues("""parent = %s""" % issue.key)
+        issue.children = self._load_issues("""parent = %s ORDER BY priority DESC, created ASC""" % issue.key)
 
     def _attach_pert_estimate(self, issue):
         if len(issue.children) > 0:
@@ -938,7 +967,7 @@ class JiraJuggler:
 
             depends_property = task.properties['depends']
             time_property = task.properties['time']
-
+            logging.debug('Before %s %s %s', task.key, time_property.name, time_property.value)
             if task.is_resolved:
                 depends_property.clear()  # don't output any links from JIRA
                 time_property.name = 'end'
@@ -964,6 +993,7 @@ class JiraJuggler:
                         time_property.value = start_time
 
                 unresolved_tasks.setdefault(assignee, []).append(task)
+            logging.debug('After %s %s %s', task.key, time_property.name, time_property.value)
 
     def sort_tasks_on_sprint(self, tasks, sprint_field_name):
         """Sorts given list of tasks based on the values of the field with the given name.
