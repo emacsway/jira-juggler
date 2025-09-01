@@ -6,6 +6,7 @@ This script queries Jira, and generates a task-juggler input file to generate a 
 """
 import abc
 import argparse
+import copy
 import functools
 import logging
 import math
@@ -212,7 +213,7 @@ class JugglerTaskProperty(ABC):
             value (object): Value of the property
         """
         self.name = self.DEFAULT_NAME
-        self.value = self.DEFAULT_VALUE
+        self.value = copy.copy(self.DEFAULT_VALUE)
 
         if jira_issue:
             self.load_from_jira_issue(jira_issue)
@@ -511,13 +512,30 @@ class JugglerTaskEffort(JugglerTaskProperty):
         return result
 
 
+class Registry(dict):
+    def path(self, key):
+        if key not in self:
+            return key
+        path = []
+        task = self[key]
+        while task:
+            path.append(to_identifier(task.key))
+            task = task.parent
+        path.reverse()
+        return ".".join(path)
+
+
 class JugglerTaskDepends(JugglerTaskProperty):
     """Class for linking of a juggler task"""
 
     DEFAULT_NAME = 'depends'
     DEFAULT_VALUE = []
-    PREFIX = '!'
+    PREFIX = ''
     links = set()
+
+    def __init__(self, registry, jira_issue=None):
+        super().__init__(jira_issue)
+        self.registry = registry
 
     def append_value(self, value):
         """Appends value for task juggler property
@@ -534,7 +552,6 @@ class JugglerTaskDepends(JugglerTaskProperty):
         Args:
             jira_issue (jira.resources.Issue): The Jira issue to load from
         """
-        self.value = list(self.DEFAULT_VALUE)
         if hasattr(jira_issue.fields, 'issuelinks'):
             for link in jira_issue.fields.issuelinks:
                 if hasattr(link, 'inwardIssue') and link.type.inward in self.links:
@@ -550,11 +567,13 @@ class JugglerTaskDepends(JugglerTaskProperty):
             tasks (list): List of JugglerTask instances to which the current task belongs. Will be used to
                 verify relations to other tasks.
         """
-        task_ids = [to_identifier(tsk.key) for tsk in tasks]
+        """
+        task_ids = [self.registry.path(to_identifier(tsk.key)) for tsk in tasks]
         for val in list(self.value):
             if val not in task_ids:
                 logging.warning('Removing link to %s for %s, as not within scope', val, task.key)
                 self.value.remove(val)
+        """
 
     def __str__(self):
         """Converts task property object to the task juggler syntax
@@ -565,6 +584,7 @@ class JugglerTaskDepends(JugglerTaskProperty):
         if self.value:
             valstr = ''
             for val in self.value:
+                val = self.registry.path(val)
                 if valstr:
                     valstr += ', '
                 valstr += self.VALUE_TEMPLATE.format(prefix=self.PREFIX,
@@ -573,6 +593,10 @@ class JugglerTaskDepends(JugglerTaskProperty):
             return self.TEMPLATE.format(prop=self.name,
                                         value=valstr)
         return ''
+
+
+class JugglerTaskFactDepends(JugglerTaskDepends):
+    DEFAULT_NAME = 'fact:depends'
 
 
 class JugglerTaskTime(JugglerTaskProperty):
@@ -674,7 +698,7 @@ task {id} "{key} {description}" {{
 }}
 '''
 
-    def __init__(self, jira_issue=None):
+    def __init__(self, registry, jira_issue=None):
         logging.info('Create JugglerTask for %s', jira_issue.key)
 
         self.key = self.DEFAULT_KEY
@@ -682,6 +706,8 @@ task {id} "{key} {description}" {{
         self.properties = {}
         self.issue = None
         self._resolved_at_date = None
+        self.parent = None
+        self.registry = registry
 
         if jira_issue:
             self.load_from_jira_issue(jira_issue)
@@ -700,10 +726,14 @@ task {id} "{key} {description}" {{
             self.resolved_at_date = self.determine_resolved_at_date()
         self.properties['allocate'] = JugglerTaskAllocate(jira_issue)
         self.properties['effort'] = JugglerTaskEffort(jira_issue)
-        self.properties['depends'] = JugglerTaskDepends(jira_issue)
+        self.properties['depends'] = JugglerTaskDepends(self.registry, jira_issue)
+        self.properties['fact:depends'] = JugglerTaskFactDepends(self.registry)
         self.properties['time'] = JugglerTaskTime(jira_issue)
         self.properties['complete'] = JugglerTaskComplete(jira_issue)
-        self.children = [JugglerTask(child) for child in jira_issue.children]
+        self.children = [JugglerTask(self.registry, child) for child in jira_issue.children]
+        for child in self.children:
+            child.parent = self
+        self.registry[to_identifier(self.key)] = self
 
     def validate(self, tasks, property_identifier):
         """Validates (and corrects) the current task
@@ -729,7 +759,7 @@ task {id} "{key} {description}" {{
         """
         props = list()
         for k, v in self.properties.items():
-            if k in ('effort', 'allocate', 'complete',) and self.children:
+            if k in ('effort', 'allocate', 'complete', 'fact:depends') and self.children:
                 continue
             props.append(str(v))
 
@@ -791,6 +821,13 @@ task {id} "{key} {description}" {{
                         closed_at_date = parser.isoparse(change.created)
         return closed_at_date
 
+    def set_milestone_dependency(self, milestone):
+        if self.children:
+            for child in self.children:
+                child.set_milestone_dependency(milestone)
+        elif self.properties['time'].is_empty:
+            self.properties['fact:depends'].append_value(milestone)
+
 
 class JiraJuggler:
     """Class for task-juggling Jira results"""
@@ -841,13 +878,17 @@ class JiraJuggler:
         Returns:
             list: A list of JugglerTask instances
         """
-        tasks = [JugglerTask(issue) for issue in self._load_issues(self.query)]
+        registry = Registry()
+        tasks = [JugglerTask(registry, issue) for issue in self._load_issues(self.query)]
         self.validate_tasks(tasks)
         if sprint_field_name:
             self.sort_tasks_on_sprint(tasks, sprint_field_name)
         tasks.sort(key=cmp_to_key(self.compare_status))
         if depend_on_preceding:
             self.link_to_preceding_task(tasks, **kwargs)
+        if kwargs.get('milestone'):
+            for task in tasks:
+                task.set_milestone_dependency(kwargs['milestone'])
         return tasks
 
     def _load_issues(self, query):
@@ -1135,6 +1176,8 @@ def main():
     argpar.add_argument('-c', '--current-date', default=datetime.now(), type=parser.isoparse,
                         help='Specify the offset-naive date to use for calculation as current date. If no value is '
                              'specified, the current value of the system clock is used.')
+    argpar.add_argument('-m', '--milestone', required=False,
+                        help='ID of current milestone.')
     args = argpar.parse_args()
     set_logging_level(args.loglevel)
 
@@ -1147,7 +1190,8 @@ def main():
         depend_on_preceding=args.depend_on_preceding,
         sprint_field_name=args.sprint_field_name,
         weeklymax=args.weeklymax,
-        current_date=args.current_date
+        current_date=args.current_date,
+        milestone=args.milestone
     )
     return 0
 
