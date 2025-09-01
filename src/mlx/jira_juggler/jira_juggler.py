@@ -928,7 +928,7 @@ class JiraJuggler:
             issue_count += len(issues)
             for issue in issues:
                 logging.debug(f'Retrieved {issue.key}: {issue.fields.summary}')
-                if issue.fields.status.name == "Closed" and issue.fields.resolution.name == "Won't Do":
+                if issue.fields.status.name == "Closed" and getattr(issue.fields.resolution, 'name', None) == "Won't Do":
                     continue
                 elif issue.fields.status.name == "Cancelled":
                     continue
