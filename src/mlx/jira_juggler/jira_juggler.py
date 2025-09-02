@@ -983,7 +983,7 @@ class JiraJuggler:
         return juggler_tasks
 
     @staticmethod
-    def link_to_preceding_task(tasks, weeklymax=5.0, current_date=datetime.now()):
+    def link_to_preceding_task(tasks, weeklymax=5.0, current_date=datetime.now(), **kwargs):
         """Links task to preceding task with the same assignee.
 
         If the task has been resolved, 'end' is added instead of 'depends' no matter what, followed by the
