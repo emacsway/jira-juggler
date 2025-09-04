@@ -832,7 +832,7 @@ task {id} "{key} {description}" {{
 class JiraJuggler:
     """Class for task-juggling Jira results"""
 
-    def __init__(self, endpoint, user, token, query, links=None):
+    def __init__(self, endpoint, user, token, query, kids_query,  links=None):
         """Constructs a JIRA juggler object
 
         Args:
@@ -852,6 +852,7 @@ class JiraJuggler:
             query = "%s ORDER BY priority DESC, created ASC" % query
         logging.info('Query: %s', query)
         self.query = query
+        self.kids_query = kids_query
 
         all_jira_link_types = jirahandle.issue_link_types()
         JugglerTaskDepends.links = determine_links(all_jira_link_types, links)
@@ -941,7 +942,10 @@ class JiraJuggler:
         return result
 
     def _attach_children(self, issue):
-        issue.children = self._load_issues("""parent = %s ORDER BY priority DESC, created ASC""" % issue.key)
+        extra_query = "AND (%s)" % self.kids_query if self.kids_query else ""
+        issue.children = self._load_issues(
+            """parent = %s %s ORDER BY priority DESC, created ASC""" % (issue.key, extra_query)
+        )
 
     def _attach_pert_estimate(self, issue):
         if len(issue.children) > 0:
@@ -1158,6 +1162,8 @@ def main():
                         help='Level for logging (strings from logging python package)')
     argpar.add_argument('-q', '--query', required=True,
                         help='Query to perform on JIRA server')
+    argpar.add_argument('-k', '--kids-query', required=False,
+                        help='Kids query to perform on JIRA server')
     argpar.add_argument('-o', '--output', default=DEFAULT_OUTPUT,
                         help='Output .tjp or .tji file for task-juggler')
     argpar.add_argument('-L', '--links', nargs='*',
@@ -1183,7 +1189,7 @@ def main():
 
     user, token = fetch_credentials()
     endpoint = config('JIRA_API_ENDPOINT', default=DEFAULT_JIRA_URL)
-    JUGGLER = JiraJuggler(endpoint, user, token, args.query, links=args.links)
+    JUGGLER = JiraJuggler(endpoint, user, token, args.query, args.kids_query, links=args.links)
 
     JUGGLER.juggle(
         output=args.output,
