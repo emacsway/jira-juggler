@@ -297,6 +297,25 @@ class JugglerTaskAllocate(JugglerTaskProperty):
                 self.value = self.DEFAULT_VALUE
 
 
+class JugglerTaskPriority(JugglerTaskProperty):
+    """Class for the allocation (assignee) of a juggler task"""
+
+    _PRIORITY_MAPPING = {
+        'lowest': 10,
+        'low': 250,
+        'medium': 500,
+        'high': 750,
+        'highest': 990,
+    }
+
+    DEFAULT_NAME = 'priority'
+    DEFAULT_VALUE = _PRIORITY_MAPPING['medium']
+
+    def load_from_jira_issue(self, jira_issue):
+        if jira_issue.fields.priority:
+            self.value = self._PRIORITY_MAPPING[jira_issue.fields.priority.name.lower()]
+
+
 class IPertEstimate(metaclass=abc.ABCMeta):
 
     @property
@@ -730,9 +749,12 @@ task {id} "{key} {description}" {{
         self.properties['fact:depends'] = JugglerTaskFactDepends(self.registry)
         self.properties['time'] = JugglerTaskTime(jira_issue)
         self.properties['complete'] = JugglerTaskComplete(jira_issue)
+        self.properties['priority'] = JugglerTaskPriority(jira_issue)
         self.children = [JugglerTask(self.registry, child) for child in jira_issue.children]
         for child in self.children:
             child.parent = self
+            if self.properties['priority'].value > child.properties['priority'].value:
+                child.properties['priority'].value = self.properties['priority'].value
         self.registry[to_identifier(self.key)] = self
 
     def validate(self, tasks, property_identifier):
