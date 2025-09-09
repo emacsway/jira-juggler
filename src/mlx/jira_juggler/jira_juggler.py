@@ -28,7 +28,27 @@ from natsort import natsorted, ns
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
 DEFAULT_OUTPUT = 'jira_export.tji'
-DONE_STATUSES = ('Approved', 'Resolved', 'Closed', 'Merged to Dev')
+PROGRESS_STATUSES = (
+    'in progress',
+)
+DEVELOPED_STATUSES = (
+    'ready for code review',
+    'in code review',
+)
+RESOLVED_STATUSES = (
+    'approved',
+    'resolved',
+    'merged to dev'
+)
+PENDING_STATUSES = (
+    'in testing',
+    'ready for testing on qa',
+    'ready for deployment',
+)
+DONE_STATUSES = (
+    'closed',
+    'cancelled',
+)
 
 JIRA_PAGE_SIZE = 50
 
@@ -273,7 +293,7 @@ class JugglerTaskAllocate(JugglerTaskProperty):
         Args:
             jira_issue (jira.resources.Issue): The Jira issue to load from
         """
-        if jira_issue.fields.status.name in DONE_STATUSES:
+        if jira_issue.fields.status.name.lower() in DONE_STATUSES + PENDING_STATUSES + RESOLVED_STATUSES:
             before_resolved = False
             for change in sorted(jira_issue.changelog.histories, key=attrgetter('created'), reverse=True):
                 for item in change.items:
@@ -285,10 +305,10 @@ class JugglerTaskAllocate(JugglerTaskProperty):
                         else:
                             self.value = to_username(item.to)
                             return  # got last assignee before transition to Approved/Resolved status
-                    elif item.field.lower() == 'status' and item.toString.lower() in ('approved', 'resolved', 'closed', 'merged to dev'):
+                    elif item.field.lower() == 'status' and item.toString.lower() in RESOLVED_STATUSES:
                         before_resolved = True
-                        if self.value and self.value != self.DEFAULT_VALUE:
-                            return  # assignee was changed after transition to Closed/Resolved status
+                        # if self.value and self.value != self.DEFAULT_VALUE:
+                        #     return  # assignee was changed after transition to Closed/Resolved status
 
         if self.is_empty:
             if getattr(jira_issue.fields, 'assignee', None):
@@ -481,7 +501,7 @@ class JugglerTaskEffort(JugglerTaskProperty):
             if estimated_time is not None:
                 self.value = estimated_time / self.FACTOR
                 logged_time = jira_issue.fields.timespent if jira_issue.fields.timespent else 0
-                if jira_issue.fields.status.name in DONE_STATUSES:
+                if jira_issue.fields.status.name.lower() in DONE_STATUSES + RESOLVED_STATUSES + PENDING_STATUSES:
                     # resolved ticket: prioritize Logged time over Estimated
                     if logged_time:
                         self.value = logged_time / self.FACTOR
@@ -652,8 +672,6 @@ class JugglerTaskTime(JugglerTaskProperty):
                     status = item.toString.lower()
                     if status in ('in progress',):
                         return parser.isoparse(change.created)
-                    elif status in ('closed',) and dt is None:
-                        dt = parser.isoparse(change.created)
         return dt
 
     def do_determine_fact_end_date(self, issue):
@@ -662,9 +680,9 @@ class JugglerTaskTime(JugglerTaskProperty):
             for item in change.items:
                 if item.field.lower() == 'status':
                     status = item.toString.lower()
-                    if status in ('approved', 'resolved', 'merged to dev'):
+                    if status in RESOLVED_STATUSES:
                         return parser.isoparse(change.created)
-                    elif status in ('closed',) and dt is None:
+                    elif status in DONE_STATUSES + PENDING_STATUSES and dt is None:
                         dt = parser.isoparse(change.created)
         return dt
 
@@ -695,12 +713,12 @@ class JugglerTaskComplete(JugglerTaskProperty):
         progress = getattr(jira_issue.fields, 'progress', None)
         if progress and progress.progress and progress.total:
             self.value = math.ceil(100 * progress.progress / progress.total)
-        elif jira_issue.fields.status.name in DONE_STATUSES:
-            self.value = 100
-        elif jira_issue.fields.status.name in ('Ready for Code Review',):
-            self.value = 80
-        elif jira_issue.fields.status.name in ('In Progress',):
+        elif jira_issue.fields.status.name.lower() in ('in progress',):
             self.value = 50
+        elif jira_issue.fields.status.name.lower() in DEVELOPED_STATUSES:
+            self.value = 80
+        elif jira_issue.fields.status.name.lower() in DONE_STATUSES + RESOLVED_STATUSES + PENDING_STATUSES:
+            self.value = 100
 
 
 class JugglerTask:
@@ -717,7 +735,7 @@ task {id} "{key} {description}" {{
 }}
 '''
 
-    def __init__(self, registry, jira_issue=None):
+    def __init__(self, registry, jira_issue=None, parent=None):
         logging.info('Create JugglerTask for %s', jira_issue.key)
 
         self.key = self.DEFAULT_KEY
@@ -725,11 +743,15 @@ task {id} "{key} {description}" {{
         self.properties = {}
         self.issue = None
         self._resolved_at_date = None
-        self.parent = None
+        self.parent = parent
         self.registry = registry
 
         if jira_issue:
             self.load_from_jira_issue(jira_issue)
+
+    def _inherit_priority(self):
+        if self.parent.properties['priority'].value > self.properties['priority'].value:
+            self.properties['priority'].value = self.parent.properties['priority'].value
 
     def load_from_jira_issue(self, jira_issue):
         """Loads the object with data from a Jira issue
@@ -750,12 +772,10 @@ task {id} "{key} {description}" {{
         self.properties['time'] = JugglerTaskTime(jira_issue)
         self.properties['complete'] = JugglerTaskComplete(jira_issue)
         self.properties['priority'] = JugglerTaskPriority(jira_issue)
-        self.children = [JugglerTask(self.registry, child) for child in jira_issue.children]
-        for child in self.children:
-            child.parent = self
-            if self.properties['priority'].value > child.properties['priority'].value:
-                child.properties['priority'].value = self.properties['priority'].value
+        self.children = [JugglerTask(self.registry, child, self) for child in jira_issue.children]
         self.registry[to_identifier(self.key)] = self
+        if jira_issue.fields.issuetype.name == 'Sub-task':
+            self._inherit_priority()
 
     def validate(self, tasks, property_identifier):
         """Validates (and corrects) the current task
@@ -808,7 +828,9 @@ task {id} "{key} {description}" {{
     @property
     def is_resolved(self):
         """bool: True if JIRA issue has been approved/resolved/closed; False otherwise"""
-        return self.issue is not None and self.issue.fields.status.name in ('Approved', 'Resolved', 'Closed', 'Merged to Dev')
+        return self.issue is not None and self.issue.fields.status.name.lower() in (
+                DONE_STATUSES + RESOLVED_STATUSES + PENDING_STATUSES
+        )
 
     @property
     def resolved_at_repr(self):
@@ -837,9 +859,9 @@ task {id} "{key} {description}" {{
             for item in change.items:
                 if item.field.lower() == 'status':
                     status = item.toString.lower()
-                    if status in ('approved', 'resolved', 'merged to dev'):
+                    if status in RESOLVED_STATUSES:
                         return parser.isoparse(change.created)
-                    elif status in ('closed',) and closed_at_date is None:
+                    elif status in DONE_STATUSES + PENDING_STATUSES and closed_at_date is None:
                         closed_at_date = parser.isoparse(change.created)
         return closed_at_date
 
@@ -951,9 +973,9 @@ class JiraJuggler:
             issue_count += len(issues)
             for issue in issues:
                 logging.debug(f'Retrieved {issue.key}: {issue.fields.summary}')
-                if issue.fields.status.name == "Closed" and getattr(issue.fields.resolution, 'name', None) == "Won't Do":
+                if issue.fields.status.name.lower() == "closed" and getattr(issue.fields.resolution, 'name', None) == "Won't Do":
                     continue
-                elif issue.fields.status.name == "Cancelled":
+                elif issue.fields.status.name.lower() == "cancelled":
                     continue
                 result.append(issue)
 
