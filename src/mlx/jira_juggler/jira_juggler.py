@@ -776,6 +776,22 @@ task {id} "{key} {description}" {{
         self.registry[to_identifier(self.key)] = self
         if jira_issue.fields.issuetype.name == 'Sub-task':
             self._inherit_priority()
+        manual_testing_tasks = [child for child in self.children if child.is_manual_testing]
+        if manual_testing_tasks:
+            manual_testing_dependencies = [
+                child for child in self.children if not child.is_manual_testing and not child.is_auto_testing
+            ]
+            for manual_testing_task in manual_testing_tasks:
+                for manual_testing_dependency in manual_testing_dependencies:
+                    manual_testing_task.properties['depends'].append_value(to_identifier(manual_testing_dependency.key))
+
+    @property
+    def is_auto_testing(self):
+        return "[qa auto]" in self.summary.lower()
+
+    @property
+    def is_manual_testing(self):
+        return "[qa manual]" in self.summary.lower()
 
     def validate(self, tasks, property_identifier):
         """Validates (and corrects) the current task
@@ -891,7 +907,7 @@ class JiraJuggler:
         logging.info('Jira endpoint: %s', endpoint)
 
         global jirahandle
-        jirahandle = JIRA(endpoint, basic_auth=(user, token))
+        jirahandle = JIRA(endpoint, basic_auth=(user, token), options={'rest_api_version': 3})
         if 'ORDER BY' not in query.upper():
             query = "%s ORDER BY priority DESC, created ASC" % query
         logging.info('Query: %s', query)
@@ -937,13 +953,16 @@ class JiraJuggler:
         return tasks
 
     def _load_issues(self, query):
-        issue_count = 0
+        next_page_token = None
         result = []
-        busy = True
-        while busy:
+        while True:
             try:
-                issues = jirahandle.search_issues(query, maxResults=JIRA_PAGE_SIZE, startAt=issue_count,
-                                                  expand='changelog')
+                response = jirahandle.enhanced_search_issues(
+                    query,
+                    maxResults=JIRA_PAGE_SIZE,
+                    expand='changelog',
+                    nextPageToken=next_page_token
+                )
             except JIRAError as err:
                 logging.error(f'Failed to query JIRA: {err}')
                 if err.status_code == 401:
@@ -967,10 +986,13 @@ class JiraJuggler:
                     logging.error(f'An unexpected error occurred: {err}')
                 return None
 
-            if len(issues) <= 0:
-                busy = False
+            if hasattr(response, 'issues'):
+                issues = response.issues
+            elif isinstance(response, dict) and 'issues' in response:
+                issues = response['issues']
+            else:
+                issues = response
 
-            issue_count += len(issues)
             for issue in issues:
                 logging.debug(f'Retrieved {issue.key}: {issue.fields.summary}')
                 if issue.fields.status.name.lower() == "closed" and getattr(issue.fields.resolution, 'name', None) == "Won't Do":
@@ -978,6 +1000,16 @@ class JiraJuggler:
                 elif issue.fields.status.name.lower() == "cancelled":
                     continue
                 result.append(issue)
+
+            if hasattr(response, 'nextPageToken'):
+                next_page_token = response.nextPageToken
+            elif isinstance(response, dict) and 'nextPageToken' in response:
+                next_page_token = response['nextPageToken']
+            else:
+                next_page_token = None
+            logging.debug("Next page token: %s" % next_page_token)
+            if not next_page_token:
+                break
 
         for issue in result:
             self._attach_children(issue)
