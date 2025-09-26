@@ -14,7 +14,7 @@ import operator
 import re
 import typing
 from abc import ABC
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from functools import cmp_to_key
 from getpass import getpass
 from itertools import chain
@@ -650,11 +650,11 @@ class JugglerTaskTime(JugglerTaskProperty):
         fact_end = self.do_determine_fact_end_date(jira_issue)
         logging.debug("""Date: %s %r %r""", jira_issue.key, start, fact_start, fact_end)
         if fact_end:
-            self.name, self.value = 'fact:end', to_juggler_date(fact_end)
+            self.name, self.value = 'fact:end', fact_end
         elif fact_start:
-            self.name, self.value = 'fact:start', to_juggler_date(fact_start)
+            self.name, self.value = 'fact:start', fact_start
         elif start:
-            self.name, self.value = 'start', to_juggler_date(start)
+            self.name, self.value = 'start', start
         logging.debug("""Set date: "%s", "%r", "%r""""", jira_issue.key, self.name, self.value)
 
     def do_get_start_date(self, issue):
@@ -700,8 +700,10 @@ class JugglerTaskTime(JugglerTaskProperty):
             str: String representation of the task property in juggler syntax
         """
         if self.value:
-            return self.TEMPLATE.format(prop=self.name,
-                                        value=self.value)
+            return self.TEMPLATE.format(
+                prop=self.name,
+                value=to_juggler_date(self.value)
+            )
         return ''
 
 
@@ -724,6 +726,14 @@ class JugglerTaskComplete(JugglerTaskProperty):
 class JugglerTask:
     """Class for a task for Task-Juggler"""
 
+    class TYPE:
+        EPIC = 'Epic'
+        SPIKE = 'Spike'
+        STORY = 'Story'
+        SUBTASK = 'Sub-task'
+        IMPROVEMENT = 'Improvement'
+        FEATURE = 'New Feature'
+
     children: typing.Collection['JugglerTask']
     DEFAULT_KEY = 'NOT_INITIALIZED'
     MAX_SUMMARY_LENGTH = 70
@@ -742,6 +752,7 @@ task {id} "{key} {description}" {{
         self.summary = self.DEFAULT_SUMMARY
         self.properties = {}
         self.issue = None
+        self.type = None
         self._resolved_at_date = None
         self.parent = parent
         self.registry = registry
@@ -761,6 +772,7 @@ task {id} "{key} {description}" {{
         """
         self.key = jira_issue.key
         self.issue = jira_issue
+        self.type = jira_issue.fields.issuetype.name
         summary = jira_issue.fields.summary.replace('\"', '\\\"')
         self.summary = (summary[:self.MAX_SUMMARY_LENGTH] + '...') if len(summary) > self.MAX_SUMMARY_LENGTH else summary
         if self.is_resolved:
@@ -774,6 +786,7 @@ task {id} "{key} {description}" {{
         self.properties['priority'] = JugglerTaskPriority(jira_issue)
         self.children = [JugglerTask(self.registry, child, self) for child in jira_issue.children]
         self.registry[to_identifier(self.key)] = self
+
         if jira_issue.fields.issuetype.name == 'Sub-task':
             self._inherit_priority()
         manual_testing_tasks = [child for child in self.children if child.is_manual_testing]
@@ -784,6 +797,10 @@ task {id} "{key} {description}" {{
             for manual_testing_task in manual_testing_tasks:
                 for manual_testing_dependency in manual_testing_dependencies:
                     manual_testing_task.properties['depends'].append_value(to_identifier(manual_testing_dependency.key))
+
+    @property
+    def is_spike(self):
+        return self.type == self.TYPE.SPIKE or '[spike]' in self.summary.lower()
 
     @property
     def is_auto_testing(self):
@@ -849,16 +866,6 @@ task {id} "{key} {description}" {{
         )
 
     @property
-    def resolved_at_repr(self):
-        """str: Representation of date and time with resolution of 1 hour corresponding to the last transition to the
-            Resolved status, ignoring timezone info; empty when not resolved
-        """
-        date = self.resolved_at_date
-        if date:
-            return to_juggler_date(date)
-        return ""
-
-    @property
     def resolved_at_date(self):
         """datetime.datetime: Date and time corresponding to the last transition to the Approved/Resolved status; the
             transition to the Closed status is used as fallback; None when not resolved
@@ -887,6 +894,52 @@ task {id} "{key} {description}" {{
                 child.set_milestone_dependency(milestone)
         elif self.properties['time'].is_empty:
             self.properties['fact:depends'].append_value(milestone)
+
+    def bottom_up_deps(self) -> set['JugglerTask']:
+        deps = set()  # TODO: Use OrderedSet?
+        for dep in self.properties['depends'].value:
+            if dep in self.properties['depends'].registry:
+                deps.add(self.properties['depends'].registry.get(dep))
+        if self.parent:
+            deps = deps.union(self.parent.bottom_up_deps())
+        for dep in deps:
+            deps = deps.union(dep.bottom_up_deps())
+        return deps
+
+    def time_is_empty(self) -> bool:
+        if not self.properties['time'].is_empty:
+            return False
+        for child in self.children:
+            if not child.time_is_empty():
+                return False
+        return True
+
+    def max_time(self) -> datetime | None:
+        dts = []
+        if not self.properties['time'].is_empty:
+            dts.append(self.properties['time'].value)
+        for child in self.children:
+            dt = child.max_time()
+            if dt:
+                dts.append(dt)
+        if dts:
+            return max(dts)
+        return None
+
+    def fix_time(self):
+        if self.children:
+            for child in self.children:
+                child.fix_time()
+        for dep in self.bottom_up_deps():
+            if dep.is_spike:
+                if dep.is_resolved:
+                    dt = dep.max_time()
+                    if dt is not None:
+                        if not self.properties['time'].is_empty and dt > self.properties['time'].value:
+                            self.properties['time'] = JugglerTaskTime()
+                elif dep.time_is_empty():
+                    if not self.properties['time'].is_empty:
+                        self.properties['time'] = JugglerTaskTime()
 
 
 class JiraJuggler:
@@ -948,6 +1001,8 @@ class JiraJuggler:
         if depend_on_preceding:
             self.link_to_preceding_task(tasks, **kwargs)
         if kwargs.get('milestone'):
+            for task in tasks:
+                task.fix_time()
             for task in tasks:
                 task.set_milestone_dependency(kwargs['milestone'])
         return tasks
@@ -1081,7 +1136,6 @@ class JiraJuggler:
             current_date (datetime.datetime): Offset-naive datetime to treat as the current date
         """
         id_to_task_map = {to_identifier(task.key): task for task in tasks}
-        current_date_str = to_juggler_date(current_date)
         unresolved_tasks = {}
         for task in tasks:
             assignee = str(task.properties['allocate'])
@@ -1092,7 +1146,7 @@ class JiraJuggler:
             if task.is_resolved:
                 depends_property.clear()  # don't output any links from JIRA
                 time_property.name = 'end'
-                time_property.value = task.resolved_at_repr
+                time_property.value = task.resolved_at_date
             else:
                 if assignee in unresolved_tasks:  # link to a preceding unresolved task
                     preceding_task = unresolved_tasks[assignee][-1]
@@ -1102,14 +1156,14 @@ class JiraJuggler:
                         if not id_to_task_map[identifier].is_resolved:
                             break
                     else:
-                        start_time = current_date_str
+                        start_time = current_date
                         if task.issue.fields.timespent:
                             effort_property = task.properties['effort']
                             effort_property.value += task.issue.fields.timespent / JugglerTaskEffort.FACTOR
                             days_spent = task.issue.fields.timespent // 3600 / 8
                             weekends = calculate_weekends(current_date, days_spent, weeklymax)
                             days_per_weekend = min(2, 7 - weeklymax)
-                            start_time = f"%{{{start_time} - {days_spent + weekends * days_per_weekend}d}}"
+                            start_time = current_date - timedelta(days=(days_spent + weekends * days_per_weekend))
                         time_property.name = 'start'
                         time_property.value = start_time
 
