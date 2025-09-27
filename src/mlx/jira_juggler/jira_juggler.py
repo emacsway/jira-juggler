@@ -316,6 +316,11 @@ class JugglerTaskAllocate(JugglerTaskProperty):
             else:
                 self.value = self.DEFAULT_VALUE
 
+    def __str__(self):
+        result = super().__str__().rstrip("\n")
+        result += """{\n%(tab)s%(tab)smandatory\n%(tab)s}\n""" % {'tab': TAB}
+        return result
+
 
 class JugglerTaskPriority(JugglerTaskProperty):
     """Class for the allocation (assignee) of a juggler task"""
@@ -936,9 +941,19 @@ task {id} "{key} {description}" {{
                     dt = dep.max_time()
                     if dt is not None:
                         if not self.properties['time'].is_empty and dt > self.properties['time'].value:
+                            logging.warning(
+                                """Fix time for %s "%s" %s because of resolved dependency %s "%s" %s""",
+                                self.key, self.summary, self.properties['time'],
+                                dep.key, dep.summary, dt
+                            )
                             self.properties['time'] = JugglerTaskTime()
                 elif dep.time_is_empty():
                     if not self.properties['time'].is_empty:
+                        logging.warning(
+                            """Fix time for %s "%s" %s because of unresolved dependency %s "%s" with no time""",
+                            self.key, self.summary, self.properties['time'],
+                            dep.key, dep.summary
+                        )
                         self.properties['time'] = JugglerTaskTime()
 
 
