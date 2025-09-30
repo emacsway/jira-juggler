@@ -318,7 +318,7 @@ class JugglerTaskAllocate(JugglerTaskProperty):
 
     def __str__(self):
         result = super().__str__().rstrip("\n")
-        result += """{\n%(tab)s%(tab)smandatory\n%(tab)s}\n""" % {'tab': TAB}
+        result += """ {\n%(tab)s%(tab)smandatory\n%(tab)s}\n""" % {'tab': TAB}
         return result
 
 
