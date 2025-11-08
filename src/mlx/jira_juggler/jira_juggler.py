@@ -7,6 +7,7 @@ This script queries Jira, and generates a task-juggler input file to generate a 
 import abc
 import argparse
 import copy
+import csv
 import functools
 import logging
 import math
@@ -19,6 +20,7 @@ from functools import cmp_to_key
 from getpass import getpass
 from itertools import chain
 from operator import attrgetter
+from pathlib import Path
 
 from dateutil import parser
 from decouple import config
@@ -750,6 +752,21 @@ task {id} "{key} {description}" {{
 }}
 '''
 
+    @classmethod
+    def factory(cls, registry, jira_issue, parent=None) -> 'JugglerTask':
+        if jira_issue.fields.issuetype.name == cls.TYPE.EPIC:
+            return Epic(registry, jira_issue, parent)
+        elif jira_issue.fields.issuetype.name == cls.TYPE.SPIKE or '[spike]' in jira_issue.fields.summary.lower():
+            return Spike(registry, jira_issue, parent)
+        elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK and "[qa auto]" in jira_issue.fields.summary.lower():
+            return QaAutoSubtask(registry, jira_issue, parent)
+        elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK and "[qa manual]" in jira_issue.fields.summary.lower():
+            return QaManualSubtask(registry, jira_issue, parent)
+        elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK:
+            return Subtask(registry, jira_issue, parent)
+        else:
+            return BacklogItem(registry, jira_issue, parent)
+
     def __init__(self, registry, jira_issue=None, parent=None):
         logging.info('Create JugglerTask for %s', jira_issue.key)
 
@@ -789,31 +806,8 @@ task {id} "{key} {description}" {{
         self.properties['time'] = JugglerTaskTime(jira_issue)
         self.properties['complete'] = JugglerTaskComplete(jira_issue)
         self.properties['priority'] = JugglerTaskPriority(jira_issue)
-        self.children = [JugglerTask(self.registry, child, self) for child in jira_issue.children]
+        self.children = [JugglerTask.factory(self.registry, child, self) for child in jira_issue.children]
         self.registry[to_identifier(self.key)] = self
-
-        if jira_issue.fields.issuetype.name == 'Sub-task':
-            self._inherit_priority()
-        manual_testing_tasks = [child for child in self.children if child.is_manual_testing]
-        if manual_testing_tasks:
-            manual_testing_dependencies = [
-                child for child in self.children if not child.is_manual_testing and not child.is_auto_testing
-            ]
-            for manual_testing_task in manual_testing_tasks:
-                for manual_testing_dependency in manual_testing_dependencies:
-                    manual_testing_task.properties['depends'].append_value(to_identifier(manual_testing_dependency.key))
-
-    @property
-    def is_spike(self):
-        return self.type == self.TYPE.SPIKE or '[spike]' in self.summary.lower()
-
-    @property
-    def is_auto_testing(self):
-        return "[qa auto]" in self.summary.lower()
-
-    @property
-    def is_manual_testing(self):
-        return "[qa manual]" in self.summary.lower()
 
     def validate(self, tasks, property_identifier):
         """Validates (and corrects) the current task
@@ -839,7 +833,7 @@ task {id} "{key} {description}" {{
         """
         props = list()
         for k, v in self.properties.items():
-            if k in ('effort', 'allocate', 'complete', 'fact:depends') and self.children:
+            if k in ('effort', 'allocate', 'complete',) and self.children:
                 continue
             props.append(str(v))
 
@@ -893,12 +887,35 @@ task {id} "{key} {description}" {{
                         closed_at_date = parser.isoparse(change.created)
         return closed_at_date
 
-    def set_milestone_dependency(self, milestone):
-        if self.children:
-            for child in self.children:
-                child.set_milestone_dependency(milestone)
-        elif self.properties['time'].is_empty:
+    def set_milestone_dependency(self, sprint_backlogs, milestone):
+        sprint = None
+        if self.key in sprint_backlogs:
+            sprint = sprint_backlogs[self.key]
+        elif getattr(self, 'sprint', None):
+            sprint = getattr(self, 'sprint').name
+        if sprint:
             self.properties['fact:depends'].append_value(milestone)
+            for child in self.children:
+                if child.time_is_empty():
+                    child.set_milestone_dependency(sprint_backlogs, milestone)
+        elif self.time_is_empty():
+            self.properties['fact:depends'].append_value(milestone)
+        elif self.children:
+            for child in self.children:
+                child.set_milestone_dependency(sprint_backlogs, milestone)
+
+    def is_todo(self):
+        if self.children:
+            return all(child.is_todo() for child in self.children)
+        else:
+            return self.properties['time'].is_empty
+
+    def collect_todo_tasks(self, collector: Registry):
+        if self.time_is_empty():
+            collector[to_identifier(self.key)] = self
+        elif self.children:
+            for child in self.children:
+                child.collect_todo_tasks(collector)
 
     def bottom_up_deps(self) -> set['JugglerTask']:
         deps = set()  # TODO: Use OrderedSet?
@@ -936,7 +953,7 @@ task {id} "{key} {description}" {{
             for child in self.children:
                 child.fix_time()
         for dep in self.bottom_up_deps():
-            if dep.is_spike:
+            if isinstance(dep, Spike):
                 if dep.is_resolved:
                     dt = dep.max_time()
                     if dt is not None:
@@ -955,6 +972,53 @@ task {id} "{key} {description}" {{
                             dep.key, dep.summary
                         )
                         self.properties['time'] = JugglerTaskTime()
+
+
+class Epic(JugglerTask):
+
+    def set_milestone_dependency(self, sprint_backlogs, milestone):
+        for child in self.children:
+            child.set_milestone_dependency(sprint_backlogs, milestone)
+
+    def collect_todo_tasks(self, collector: Registry):
+        for child in self.children:
+            child.collect_todo_tasks(collector)
+
+
+class BacklogItem(JugglerTask):
+
+    def load_from_jira_issue(self, jira_issue):
+        super().load_from_jira_issue(jira_issue)
+
+        manual_testing_tasks = [child for child in self.children if isinstance(child, QaManualSubtask)]
+        if manual_testing_tasks:
+            manual_testing_dependencies = [
+                child for child in self.children if not isinstance(child, (QaAutoSubtask, QaManualSubtask))
+            ]
+            for manual_testing_task in manual_testing_tasks:
+                if manual_testing_task.time_is_empty():
+                    for manual_testing_dependency in manual_testing_dependencies:
+                        manual_testing_task.properties['depends'].append_value(
+                            to_identifier(manual_testing_dependency.key)
+                        )
+
+
+class Spike(JugglerTask):
+    pass
+
+
+class Subtask(JugglerTask):
+    def load_from_jira_issue(self, jira_issue):
+        super().load_from_jira_issue(jira_issue)
+        # self._inherit_priority()
+
+
+class QaAutoSubtask(Subtask):
+    pass
+
+
+class QaManualSubtask(Subtask):
+    pass
 
 
 class JiraJuggler:
@@ -1008,18 +1072,13 @@ class JiraJuggler:
             list: A list of JugglerTask instances
         """
         registry = Registry()
-        tasks = [JugglerTask(registry, issue) for issue in self._load_issues(self.query)]
+        tasks = [JugglerTask.factory(registry, issue) for issue in self._load_issues(self.query)]
         self.validate_tasks(tasks)
         if sprint_field_name:
             self.sort_tasks_on_sprint(tasks, sprint_field_name)
         tasks.sort(key=cmp_to_key(self.compare_status))
         if depend_on_preceding:
             self.link_to_preceding_task(tasks, **kwargs)
-        if kwargs.get('milestone'):
-            for task in tasks:
-                task.fix_time()
-            for task in tasks:
-                task.set_milestone_dependency(kwargs['milestone'])
         return tasks
 
     def _load_issues(self, query):
@@ -1122,13 +1181,43 @@ class JiraJuggler:
         Args:
             list: A list of JugglerTask instances
         """
+
+        if kwargs.get('sprint_field_name'):
+            kwargs['sprint_field_name'], sprint_re_pattern, sprint_re_repl = kwargs['sprint_field_name'].split('|')
+            JugglerTask.sprint_accessor = staticmethod(make_sprint_accessor(
+                kwargs['sprint_field_name'],
+                sprint_re_pattern,
+                sprint_re_repl
+            ))
         juggler_tasks = self.load_issues_from_jira(**kwargs)
         if not juggler_tasks:
             return None
+        sprint_backlogs = {}
+        if kwargs.get('sprint_backlogs_file_path'):
+            with open(kwargs['sprint_backlogs_file_path'], newline='') as csvfile:
+                for row in csv.reader(csvfile):
+                    sprint_backlogs[row[0]] = row[1]
+        if kwargs.get('milestone'):
+            for task in juggler_tasks:
+                task.fix_time()
+            collector = Registry()
+            for task in juggler_tasks:
+                task.set_milestone_dependency(sprint_backlogs, kwargs['milestone'])
+                # task.collect_todo_tasks(collector)
+            if False and output:
+                path = Path(output)
+                new_name = path.parent / ("%s_sprints%s.tmpl" % (path.stem, path.suffix))
+                # new_name = path.with_suffix('').with_name(path.stem + "_sprints").with_suffix(path.suffix + ".tmpl")
+                with open(new_name, 'w', encoding='utf-8') as out:
+                    for k, task in collector.items():
+                        out.write("""
+supplement task %(id)s {
+    fact:depends %(sprint)s
+}
+""" % {'id': collector.path(k), 'sprint': kwargs['milestone']})
         if output:
             with open(output, 'w', encoding='utf-8') as out:
                 for task in juggler_tasks:
-                    task.gateway = self
                     out.write(str(task))
         return juggler_tasks
 
@@ -1229,6 +1318,9 @@ class JiraJuggler:
                                 task.sprint_priority = prio
                                 if hasattr(sprint_info, 'startDate'):
                                     task.sprint_start_date = parser.parse(sprint_info.startDate)
+                if task.children:
+                    self.sort_tasks_on_sprint(task.children, sprint_field_name)
+
         logging.debug("Sorting tasks based on sprint information...")
         tasks.sort(key=cmp_to_key(self.compare_sprint_priority))
 
@@ -1301,6 +1393,81 @@ class JiraJuggler:
         return 0
 
 
+class Sprint:
+    def __init__(self, name, priority, start):
+        self.name = name
+        self.priority = priority
+        self.start = start
+
+
+def make_sprint_accessor(sprint_field_name, sprint_re_pattern, sprint_re_repl):
+    pattern = re.compile(sprint_re_pattern)
+    priorities = {
+        "ACTIVE": 3,
+        "FUTURE": 2,
+        "CLOSED": 1,
+    }
+
+    def sprint_accessor(jira_issue):
+        sprint = Sprint("", 0, None)
+        values = getattr(jira_issue.fields, sprint_field_name, None)
+        if values is not None:
+            if isinstance(values, str):
+                values = [values]
+            for sprint_info in values:
+                state = ""
+                if isinstance(sprint_info, (str, bytes)):  # Jira Server
+                    state_match = re.search("state=({})".format("|".join(priorities)), sprint_info)
+                    if state_match:
+                        state = state_match.group(1)
+                        prio = priorities[state]
+                        if prio > sprint.priority:
+                            name = re.search("name=(.+?),", sprint_info).group(1)
+                            name = pattern.sub(sprint_re_repl, name)
+                            sprint = Sprint(
+                                name,
+                                prio,
+                                extract_start_date(sprint_info, jira_issue.key)
+                            )
+
+                else:  # Jira Cloud
+                    state = sprint_info.state.upper()
+                    if state in priorities:
+                        prio = priorities[state]
+                        if prio > sprint.priority:
+                            name = sprint_info.name
+                            name = pattern.sub(sprint_re_repl, name)
+                            sprint = Sprint(
+                                name,
+                                prio,
+                                parser.parse(sprint_info.startDate) if hasattr(sprint_info, 'startDate') else None
+                            )
+        return sprint
+
+    return sprint_accessor
+
+
+def extract_start_date(sprint_info, issue_key):
+    """Extracts the start date from the given info string.
+
+    Args:
+        sprint_info (str): Raw information about a sprint, as returned by the JIRA API
+        issue_key (str): Name of the JIRA issue
+
+    Returns:
+        datetime.datetime/None: Start date as a datetime object or None if the sprint does not have a start date
+    """
+    start_date_match = re.search("startDate=(.+?),", sprint_info)
+    if start_date_match:
+        start_date_str = start_date_match.group(1)
+        if start_date_str != '<null>':
+            try:
+                return parser.parse(start_date_match.group(1))
+            except parser.ParserError as err:
+                logging.debug("Failed to parse start date of sprint of issue %s: %s", issue_key, err)
+                return None
+
+
 def main():
     argpar = argparse.ArgumentParser()
     argpar.add_argument('-l', '--loglevel', default=DEFAULT_LOGLEVEL,
@@ -1329,6 +1496,8 @@ def main():
                              'specified, the current value of the system clock is used.')
     argpar.add_argument('-m', '--milestone', required=False,
                         help='ID of current milestone.')
+    argpar.add_argument('-b', '--sprint-backlogs', dest='sprint_backlogs_file_path', default='',
+                        help='File path to sprints')
     args = argpar.parse_args()
     set_logging_level(args.loglevel)
 
@@ -1342,7 +1511,8 @@ def main():
         sprint_field_name=args.sprint_field_name,
         weeklymax=args.weeklymax,
         current_date=args.current_date,
-        milestone=args.milestone
+        milestone=args.milestone,
+        sprint_backlogs_file_path=args.sprint_backlogs_file_path,
     )
     return 0
 
