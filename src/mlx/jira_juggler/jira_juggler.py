@@ -141,6 +141,26 @@ def calculate_weekends(date, workdays_passed, weeklymax):
     return weekend_count
 
 
+def add_working_days(from_date, add_days, weekly_max):
+    business_days_to_add = add_days
+    current_date = from_date
+    if add_days > 0:
+        while business_days_to_add > 0:
+            current_date += timedelta(days=1)
+            weekday = current_date.weekday()
+            if weekday >= weekly_max:  # sunday = 6
+                continue
+            business_days_to_add -= 1
+    else:
+        while business_days_to_add < 0:
+            current_date -= timedelta(days=1)
+            weekday = current_date.weekday()
+            if weekday >= weekly_max:  # sunday = 6
+                continue
+            business_days_to_add += 1
+    return current_date
+
+
 def to_username(value):
     """Converts the given value to a username (user ID), if needed, while caching the result.
 
@@ -936,34 +956,47 @@ task {id} "{key} {description}" {{
                 return False
         return True
 
-    def max_time(self) -> datetime | None:
+    def max_time(self, weekly_max) -> datetime | None:
         dts = []
         if not self.properties['time'].is_empty:
-            dts.append(self.properties['time'].value)
+            if 'end' in self.properties['time'].name:
+                end_time = self.properties['time'].value
+            else:
+                start_time = self.properties['time'].value
+                working_days = self.properties['effort'].value / 0.7  # focus-factor
+                end_time = add_working_days(start_time, working_days, weekly_max)
+            dts.append(end_time)
         for child in self.children:
-            dt = child.max_time()
+            dt = child.max_time(weekly_max)
             if dt:
                 dts.append(dt)
         if dts:
             return max(dts)
         return None
 
-    def fix_time(self):
+    def fix_time(self, weekly_max):
         if self.children:
             for child in self.children:
-                child.fix_time()
+                child.fix_time(weekly_max)
         for dep in self.bottom_up_deps():
             if isinstance(dep, Spike):
                 if dep.is_resolved:
-                    dt = dep.max_time()
+                    dt = dep.max_time(weekly_max)
                     if dt is not None:
-                        if not self.properties['time'].is_empty and dt > self.properties['time'].value:
-                            logging.warning(
-                                """Fix time for %s "%s" %s because of resolved dependency %s "%s" %s""",
-                                self.key, self.summary, self.properties['time'],
-                                dep.key, dep.summary, dt
-                            )
-                            self.properties['time'] = JugglerTaskTime()
+                        if not self.properties['time'].is_empty:
+                            if 'start' in self.properties['time'].name:
+                                start_time = self.properties['time'].value
+                            else:
+                                end_time = self.properties['time'].value
+                                days_spent = self.properties['effort'].value / 0.7  # focus-factor
+                                start_time = add_working_days(end_time, -days_spent, weekly_max)
+                            if dt > start_time:
+                                logging.warning(
+                                    """Fix time for %s "%s" %s because of resolved dependency %s "%s" %s""",
+                                    self.key, self.summary, self.properties['time'],
+                                    dep.key, dep.summary, dt
+                                )
+                                self.properties['time'] = JugglerTaskTime()
                 elif dep.time_is_empty():
                     if not self.properties['time'].is_empty:
                         logging.warning(
@@ -1199,7 +1232,7 @@ class JiraJuggler:
                     sprint_backlogs[row[0]] = row[1]
         if kwargs.get('milestone'):
             for task in juggler_tasks:
-                task.fix_time()
+                task.fix_time(kwargs.get('weeklymax'))
             collector = Registry()
             for task in juggler_tasks:
                 task.set_milestone_dependency(sprint_backlogs, kwargs['milestone'])
