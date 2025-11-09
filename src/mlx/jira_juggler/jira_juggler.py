@@ -907,22 +907,25 @@ task {id} "{key} {description}" {{
                         closed_at_date = parser.isoparse(change.created)
         return closed_at_date
 
-    def set_milestone_dependency(self, sprint_backlogs, milestone):
+    def shift_unstarted_tasks_to_milestone(self, sprint_backlogs, milestone):
         sprint = None
         if self.key in sprint_backlogs:
-            sprint = sprint_backlogs[self.key]
-        elif getattr(self, 'sprint', None):
+            sprint = sprint_backlogs[self.key].get('sprint')
+            priority = sprint_backlogs[self.key].get('priority')
+            if priority:
+                self.properties['priority'] = priority
+        if not sprint and getattr(self, 'sprint', None):
             sprint = getattr(self, 'sprint').name
         if sprint:
             self.properties['fact:depends'].append_value(milestone)
             for child in self.children:
                 if child.time_is_empty():
-                    child.set_milestone_dependency(sprint_backlogs, milestone)
+                    child.shift_unstarted_tasks_to_milestone(sprint_backlogs, milestone)
         elif self.time_is_empty():
             self.properties['fact:depends'].append_value(milestone)
         elif self.children:
             for child in self.children:
-                child.set_milestone_dependency(sprint_backlogs, milestone)
+                child.shift_unstarted_tasks_to_milestone(sprint_backlogs, milestone)
 
     def is_todo(self):
         if self.children:
@@ -1009,9 +1012,9 @@ task {id} "{key} {description}" {{
 
 class Epic(JugglerTask):
 
-    def set_milestone_dependency(self, sprint_backlogs, milestone):
+    def shift_unstarted_tasks_to_milestone(self, sprint_backlogs, milestone):
         for child in self.children:
-            child.set_milestone_dependency(sprint_backlogs, milestone)
+            child.shift_unstarted_tasks_to_milestone(sprint_backlogs, milestone)
 
     def collect_todo_tasks(self, collector: Registry):
         for child in self.children:
@@ -1226,16 +1229,14 @@ class JiraJuggler:
         if not juggler_tasks:
             return None
         sprint_backlogs = {}
-        if kwargs.get('sprint_backlogs_file_path'):
-            with open(kwargs['sprint_backlogs_file_path'], newline='') as csvfile:
-                for row in csv.reader(csvfile):
-                    sprint_backlogs[row[0]] = row[1]
+        if kwargs.get('sprint_backlogs_filepath'):
+            sprint_backlogs = self._load_sprint_backlogs(kwargs['sprint_backlogs_filepath'])
         if kwargs.get('milestone'):
             for task in juggler_tasks:
                 task.fix_time(kwargs.get('weeklymax'))
             collector = Registry()
             for task in juggler_tasks:
-                task.set_milestone_dependency(sprint_backlogs, kwargs['milestone'])
+                task.shift_unstarted_tasks_to_milestone(sprint_backlogs, kwargs['milestone'])
                 # task.collect_todo_tasks(collector)
             if False and output:
                 path = Path(output)
@@ -1253,6 +1254,17 @@ supplement task %(id)s {
                 for task in juggler_tasks:
                     out.write(str(task))
         return juggler_tasks
+
+    @staticmethod
+    def _load_sprint_backlogs(filepath):
+        sprint_backlogs = {}
+        with open(filepath, newline='') as csvfile:
+            for row in csv.reader(csvfile):
+                sprint_backlogs[row[0]] = {
+                    'sprint': row[1] or None,
+                    'priority': int(row[2]) if len(row) > 2 and row[2] else None
+                }
+        return sprint_backlogs
 
     @staticmethod
     def link_to_preceding_task(tasks, weeklymax=5.0, current_date=datetime.now(), **kwargs):
@@ -1529,7 +1541,7 @@ def main():
                              'specified, the current value of the system clock is used.')
     argpar.add_argument('-m', '--milestone', required=False,
                         help='ID of current milestone.')
-    argpar.add_argument('-b', '--sprint-backlogs', dest='sprint_backlogs_file_path', default='',
+    argpar.add_argument('-b', '--sprint-backlogs', dest='sprint_backlogs_filepath', default='',
                         help='File path to sprints')
     args = argpar.parse_args()
     set_logging_level(args.loglevel)
@@ -1545,7 +1557,7 @@ def main():
         weeklymax=args.weeklymax,
         current_date=args.current_date,
         milestone=args.milestone,
-        sprint_backlogs_file_path=args.sprint_backlogs_file_path,
+        sprint_backlogs_filepath=args.sprint_backlogs_filepath,
     )
     return 0
 
