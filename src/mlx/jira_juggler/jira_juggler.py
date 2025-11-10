@@ -908,24 +908,52 @@ task {id} "{key} {description}" {{
         return closed_at_date
 
     def shift_unstarted_tasks_to_milestone(self, sprint_backlogs, milestone):
-        sprint = None
-        if self.key in sprint_backlogs:
-            sprint = sprint_backlogs[self.key].get('sprint')
-            priority = sprint_backlogs[self.key].get('priority')
-            if priority:
-                self.properties['priority'] = priority
-        if not sprint and getattr(self, 'sprint', None):
-            sprint = getattr(self, 'sprint').name
+        sprint = self.get_sprint(sprint_backlogs)
         if sprint:
-            self.properties['fact:depends'].append_value(milestone)
-            for child in self.children:
-                if child.time_is_empty():
-                    child.shift_unstarted_tasks_to_milestone(sprint_backlogs, milestone)
+            self.properties['fact:depends'].append_value(sprint)
+            if not self.time_is_empty():
+                for child in self.children:
+                    if child.time_is_empty():
+                        child.shift_unstarted_tasks_to_milestone(sprint_backlogs, milestone)
         elif self.time_is_empty():
-            self.properties['fact:depends'].append_value(milestone)
+            current_milestone = milestone if self.is_dor() else "${sprint_non_dor}"
+            self.properties['fact:depends'].append_value(current_milestone)
         elif self.children:
             for child in self.children:
                 child.shift_unstarted_tasks_to_milestone(sprint_backlogs, milestone)
+
+    def get_sprint(self, sprint_backlogs):
+        sprint = None
+        if self.key in sprint_backlogs:
+            sprint = sprint_backlogs[self.key].get('sprint')
+        if not sprint and getattr(self, 'sprint', None):
+            sprint = getattr(self, 'sprint').name
+        return sprint
+
+    def adjust_priority(self, sprint_backlogs):
+        priority = self.get_priority(sprint_backlogs)
+        if priority is not None:
+            self.properties['priority'].value = priority
+            if self.is_dor():
+                for child in self.children:
+                    if not child.is_dor():
+                        child.adjust_priority(sprint_backlogs)
+        elif not self.is_dor():
+            self.properties['priority'].value = 1
+        elif self.children:
+            for child in self.children:
+                child.adjust_priority(sprint_backlogs)
+
+    def get_priority(self, sprint_backlogs):
+        if self.key in sprint_backlogs:
+            return sprint_backlogs[self.key].get('priority')
+        return None
+
+    def is_dor(self):
+        if self.children:
+            return any(child.is_dor() for child in self.children)  # all()?
+        else:
+            return not self.properties['effort'].is_empty
 
     def is_todo(self):
         if self.children:
@@ -1228,12 +1256,18 @@ class JiraJuggler:
         juggler_tasks = self.load_issues_from_jira(**kwargs)
         if not juggler_tasks:
             return None
+
         sprint_backlogs = {}
         if kwargs.get('sprint_backlogs_filepath'):
             sprint_backlogs = self._load_sprint_backlogs(kwargs['sprint_backlogs_filepath'])
+
+        for task in juggler_tasks:
+            pass  # task.adjust_priority(sprint_backlogs)
+
         if kwargs.get('milestone'):
             for task in juggler_tasks:
                 task.fix_time(kwargs.get('weeklymax'))
+
             collector = Registry()
             for task in juggler_tasks:
                 task.shift_unstarted_tasks_to_milestone(sprint_backlogs, kwargs['milestone'])
