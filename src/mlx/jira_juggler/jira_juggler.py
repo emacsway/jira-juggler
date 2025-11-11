@@ -368,6 +368,11 @@ class JugglerTaskPriority(JugglerTaskProperty):
         if jira_issue.fields.priority:
             self.value = self._PRIORITY_MAPPING[jira_issue.fields.priority.name.lower()]
 
+    def __str__(self):
+        if self.value != self.DEFAULT_VALUE:
+            return super().__str__()
+        return ''
+
 
 class IPertEstimate(metaclass=abc.ABCMeta):
 
@@ -964,13 +969,12 @@ task {id} "{key} {description}" {{
         sprint = self.get_sprint(extras)
         if sprint:
             self.properties['fact:depends'].append_value(sprint)
-            if not self.time_is_empty():
+            if not self.time_is_empty() and self.in_progress():
                 for child in self.children:
                     if child.time_is_empty():
                         child.shift_unstarted_tasks_to_milestone(extras, milestone)
         elif self.time_is_empty():
-            current_milestone = milestone if self.is_dor() else "${sprint_non_dor}"
-            self.properties['fact:depends'].append_value(current_milestone)
+            self.properties['fact:depends'].append_value(milestone)
         elif self.children:
             for child in self.children:
                 child.shift_unstarted_tasks_to_milestone(extras, milestone)
@@ -989,23 +993,21 @@ task {id} "{key} {description}" {{
             priority = extras[self.key].priority
         if priority is not None:
             self.properties['priority'].value = priority
-            if self.is_dor():
-                for child in self.children:
-                    if not child.is_dor():
-                        child.adjust_priority(extras)
-        """
-        elif not self.is_dor():
-            self.properties['priority'].value = 1
-        elif self.children:
+        if self.children:
             for child in self.children:
                 child.adjust_priority(extras)
-        """
 
     def is_dor(self):
         if self.children:
             return any(child.is_dor() for child in self.children)  # all()?
         else:
             return not self.properties['effort'].is_empty
+
+    def in_progress(self):
+        if self.children:
+            return any(child.in_progress() for child in self.children)  # all()?
+        else:
+            return not self.properties['complete'].is_empty
 
     def adjust_flags(self, extras):
         if self.key in extras:
@@ -1126,6 +1128,26 @@ class BacklogItem(JugglerTask):
                         manual_testing_task.properties['depends'].append_value(
                             to_identifier(manual_testing_dependency.key)
                         )
+
+    def shift_unstarted_tasks_to_milestone(self, extras, milestone):
+        if not self.is_dor():
+            milestone = "${sprint_non_dor}"
+        super().shift_unstarted_tasks_to_milestone(extras, milestone)
+
+    def adjust_priority(self, extras):
+        priority = None
+        if self.key in extras:
+            priority = extras[self.key].priority
+        if priority is not None:
+            self.properties['priority'].value = priority
+            if self.children:
+                for child in self.children:
+                    child.adjust_priority(extras)
+        elif not self.is_dor() and not self.in_progress():
+            self.properties['priority'].value = 1
+        elif self.children:
+            for child in self.children:
+                child.adjust_priority(extras)
 
 
 class Spike(JugglerTask):
