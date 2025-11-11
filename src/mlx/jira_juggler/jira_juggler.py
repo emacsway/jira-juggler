@@ -30,6 +30,12 @@ from natsort import natsorted, ns
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
 DEFAULT_OUTPUT = 'jira_export.tji'
+TODO_STATUSES = (
+    'to do',
+    'blocked',
+    'reopened',
+    'postponed',
+)
 PROGRESS_STATUSES = (
     'in progress',
 )
@@ -661,6 +667,51 @@ class JugglerTaskDepends(JugglerTaskProperty):
         return ''
 
 
+class JugglerTaskFlags(JugglerTaskProperty):
+    """Class for linking of a juggler task"""
+
+    DEFAULT_NAME = 'flags'
+    DEFAULT_VALUE = []
+
+    def append_value(self, value):
+        """Appends value for task juggler property
+
+        Args:
+            value (object): Value to append to the property
+        """
+        if value not in self.value:
+            self.value.append(value)
+
+    def load_from_jira_issue(self, jira_issue):
+        """Loads the object with data from a Jira issue
+
+        Args:
+            jira_issue (jira.resources.Issue): The Jira issue to load from
+        """
+        pass
+
+    def validate(self, task, tasks):
+        pass
+
+    def __str__(self):
+        """Converts task property object to the task juggler syntax
+
+        Returns:
+            str: String representation of the task property in juggler syntax
+        """
+        if self.value:
+            valstr = ''
+            for val in self.value:
+                if valstr:
+                    valstr += ', '
+                valstr += self.VALUE_TEMPLATE.format(prefix=self.PREFIX,
+                                                     value=val,
+                                                     suffix=self.SUFFIX)
+            return self.TEMPLATE.format(prop=self.name,
+                                        value=valstr)
+        return ''
+
+
 class JugglerTaskFactDepends(JugglerTaskDepends):
     DEFAULT_NAME = 'fact:depends'
 
@@ -677,6 +728,7 @@ class JugglerTaskTime(JugglerTaskProperty):
         fact_end = self.do_determine_fact_end_date(jira_issue)
         logging.debug("""Date: %s %r %r""", jira_issue.key, start, fact_start, fact_end)
         if fact_end:
+            # if jira_issue.fields.status.name.lower() not in TODO_STATUSES:
             self.name, self.value = 'fact:end', fact_end
         elif fact_start:
             self.name, self.value = 'fact:start', fact_start
@@ -826,6 +878,7 @@ task {id} "{key} {description}" {{
         self.properties['time'] = JugglerTaskTime(jira_issue)
         self.properties['complete'] = JugglerTaskComplete(jira_issue)
         self.properties['priority'] = JugglerTaskPriority(jira_issue)
+        self.properties['flags'] = JugglerTaskFlags(jira_issue)
         self.children = [JugglerTask.factory(self.registry, child, self) for child in jira_issue.children]
         self.registry[to_identifier(self.key)] = self
 
@@ -907,53 +960,61 @@ task {id} "{key} {description}" {{
                         closed_at_date = parser.isoparse(change.created)
         return closed_at_date
 
-    def shift_unstarted_tasks_to_milestone(self, sprint_backlogs, milestone):
-        sprint = self.get_sprint(sprint_backlogs)
+    def shift_unstarted_tasks_to_milestone(self, extras, milestone):
+        sprint = self.get_sprint(extras)
         if sprint:
             self.properties['fact:depends'].append_value(sprint)
             if not self.time_is_empty():
                 for child in self.children:
                     if child.time_is_empty():
-                        child.shift_unstarted_tasks_to_milestone(sprint_backlogs, milestone)
+                        child.shift_unstarted_tasks_to_milestone(extras, milestone)
         elif self.time_is_empty():
             current_milestone = milestone if self.is_dor() else "${sprint_non_dor}"
             self.properties['fact:depends'].append_value(current_milestone)
         elif self.children:
             for child in self.children:
-                child.shift_unstarted_tasks_to_milestone(sprint_backlogs, milestone)
+                child.shift_unstarted_tasks_to_milestone(extras, milestone)
 
     def get_sprint(self, sprint_backlogs):
         sprint = None
         if self.key in sprint_backlogs:
-            sprint = sprint_backlogs[self.key].get('sprint')
+            sprint = sprint_backlogs[self.key].sprint
         if not sprint and getattr(self, 'sprint', None):
             sprint = getattr(self, 'sprint').name
         return sprint
 
-    def adjust_priority(self, sprint_backlogs):
-        priority = self.get_priority(sprint_backlogs)
+    def adjust_priority(self, extras):
+        priority = None
+        if self.key in extras:
+            priority = extras[self.key].priority
         if priority is not None:
             self.properties['priority'].value = priority
             if self.is_dor():
                 for child in self.children:
                     if not child.is_dor():
-                        child.adjust_priority(sprint_backlogs)
+                        child.adjust_priority(extras)
+        """
         elif not self.is_dor():
             self.properties['priority'].value = 1
         elif self.children:
             for child in self.children:
-                child.adjust_priority(sprint_backlogs)
-
-    def get_priority(self, sprint_backlogs):
-        if self.key in sprint_backlogs:
-            return sprint_backlogs[self.key].get('priority')
-        return None
+                child.adjust_priority(extras)
+        """
 
     def is_dor(self):
         if self.children:
             return any(child.is_dor() for child in self.children)  # all()?
         else:
             return not self.properties['effort'].is_empty
+
+    def adjust_flags(self, extras):
+        if self.key in extras:
+            flags = extras[self.key].flags
+            for flag in flags:
+                self.properties['flags'].append_value(flag)
+        if self.children:
+            for child in self.children:
+                child.adjust_flags(extras)
 
     def is_todo(self):
         if self.children:
@@ -1040,9 +1101,9 @@ task {id} "{key} {description}" {{
 
 class Epic(JugglerTask):
 
-    def shift_unstarted_tasks_to_milestone(self, sprint_backlogs, milestone):
+    def shift_unstarted_tasks_to_milestone(self, extras, milestone):
         for child in self.children:
-            child.shift_unstarted_tasks_to_milestone(sprint_backlogs, milestone)
+            child.shift_unstarted_tasks_to_milestone(extras, milestone)
 
     def collect_todo_tasks(self, collector: Registry):
         for child in self.children:
@@ -1257,12 +1318,13 @@ class JiraJuggler:
         if not juggler_tasks:
             return None
 
-        sprint_backlogs = {}
-        if kwargs.get('sprint_backlogs_filepath'):
-            sprint_backlogs = self._load_sprint_backlogs(kwargs['sprint_backlogs_filepath'])
+        extras = {}
+        if kwargs.get('extras_filepath'):
+            extras = self._load_extras(kwargs['extras_filepath'])
 
         for task in juggler_tasks:
-            pass  # task.adjust_priority(sprint_backlogs)
+            task.adjust_flags(extras)
+            task.adjust_priority(extras)
 
         if kwargs.get('milestone'):
             for task in juggler_tasks:
@@ -1270,7 +1332,7 @@ class JiraJuggler:
 
             collector = Registry()
             for task in juggler_tasks:
-                task.shift_unstarted_tasks_to_milestone(sprint_backlogs, kwargs['milestone'])
+                task.shift_unstarted_tasks_to_milestone(extras, kwargs['milestone'])
                 # task.collect_todo_tasks(collector)
             if False and output:
                 path = Path(output)
@@ -1290,15 +1352,18 @@ supplement task %(id)s {
         return juggler_tasks
 
     @staticmethod
-    def _load_sprint_backlogs(filepath):
-        sprint_backlogs = {}
+    def _load_extras(filepath):
+        extras = {}
         with open(filepath, newline='') as csvfile:
             for row in csv.reader(csvfile):
-                sprint_backlogs[row[0]] = {
-                    'sprint': row[1] or None,
-                    'priority': int(row[2]) if len(row) > 2 and row[2] else None
-                }
-        return sprint_backlogs
+                if row[0].startswith('#'):
+                    continue
+                extras[row[0]] = TaskExtra(
+                    sprint=row[1] or None,
+                    priority=int(row[2]) if len(row) > 2 and row[2] else None,
+                    flags=[i.strip() for i in row[3].split(',')] if row[3] else [],
+                )
+        return extras
 
     @staticmethod
     def link_to_preceding_task(tasks, weeklymax=5.0, current_date=datetime.now(), **kwargs):
@@ -1472,6 +1537,13 @@ supplement task %(id)s {
         return 0
 
 
+class TaskExtra:
+    def __init__(self, sprint, priority, flags):
+        self.sprint = sprint
+        self.priority = priority
+        self.flags = flags
+
+
 class Sprint:
     def __init__(self, name, priority, start):
         self.name = name
@@ -1575,7 +1647,7 @@ def main():
                              'specified, the current value of the system clock is used.')
     argpar.add_argument('-m', '--milestone', required=False,
                         help='ID of current milestone.')
-    argpar.add_argument('-b', '--sprint-backlogs', dest='sprint_backlogs_filepath', default='',
+    argpar.add_argument('-e', '--extras', dest='extras_filepath', default='',
                         help='File path to sprints')
     args = argpar.parse_args()
     set_logging_level(args.loglevel)
@@ -1591,7 +1663,7 @@ def main():
         weeklymax=args.weeklymax,
         current_date=args.current_date,
         milestone=args.milestone,
-        sprint_backlogs_filepath=args.sprint_backlogs_filepath,
+        extras_filepath=args.extras_filepath,
     )
     return 0
 
