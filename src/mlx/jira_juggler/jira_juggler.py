@@ -354,11 +354,11 @@ class JugglerTaskPriority(JugglerTaskProperty):
     """Class for the allocation (assignee) of a juggler task"""
 
     _PRIORITY_MAPPING = {
-        'lowest': 10,
-        'low': 250,
+        'lowest': 200,
+        'low': 350,
         'medium': 500,
-        'high': 750,
-        'highest': 990,
+        'high': 650,
+        'highest': 800,
     }
 
     DEFAULT_NAME = 'priority'
@@ -754,8 +754,17 @@ class JugglerTaskTime(JugglerTaskProperty):
             for item in change.items:
                 if item.field.lower() == 'status':
                     status = item.toString.lower()
-                    if status in ('in progress',):
+                    if status in PROGRESS_STATUSES:
                         return parser.isoparse(change.created)
+
+        if dt is None:
+            for change in sorted(issue.changelog.histories, key=attrgetter('created'), reverse=False):
+                for item in change.items:
+                    if item.field.lower() == 'status':
+                        status = item.toString.lower()
+                        if status in DEVELOPED_STATUSES:
+                            return parser.isoparse(change.created)
+
         return dt
 
     def do_determine_fact_end_date(self, issue):
