@@ -1173,6 +1173,7 @@ class Subtask(JugglerTask):
     def load_from_jira_issue(self, jira_issue):
         super().load_from_jira_issue(jira_issue)
         # self._inherit_priority()
+        self.properties['priority'].clear()
 
 
 class QaAutoSubtask(Subtask):
