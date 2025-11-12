@@ -366,8 +366,9 @@ class JugglerTaskPriority(JugglerTaskProperty):
 
     def set_relatively_on(self, parent_priority=None):
         if parent_priority is not None:
-            relative_priority = round(parent_priority + (self.value - self._PRIORITY_MAPPING['medium']) * 0.03)
-            self.value = relative_priority
+            relative_priority = round((self.value - self._PRIORITY_MAPPING['medium']) * 0.03)
+            if relative_priority != 0:
+                self.value = parent_priority + relative_priority
 
     def load_from_jira_issue(self, jira_issue):
         if jira_issue.fields.priority:
@@ -837,7 +838,8 @@ class JugglerTask:
     MAX_SUMMARY_LENGTH = 70
     DEFAULT_SUMMARY = 'Task is not initialized'
     TEMPLATE = '''
-task {id} "{key} {description}" {{
+task {id} "{description}" {{
+{tab}Key "{key}"
 {props}
 {children}
 }}
