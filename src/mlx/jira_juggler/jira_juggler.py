@@ -1397,7 +1397,7 @@ supplement task %(id)s {
         extras = {}
         with open(filepath, newline='') as csvfile:
             for row in csv.reader(csvfile):
-                if not row[0] or row[0].startswith('#'):
+                if not row or row[0].startswith('#'):
                     continue
                 extras[row[0]] = TaskExtra(
                     sprint=row[1] or None,
