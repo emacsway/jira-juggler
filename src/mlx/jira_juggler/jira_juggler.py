@@ -827,7 +827,7 @@ class JugglerTask:
         IMPROVEMENT = 'Improvement'
         FEATURE = 'New Feature'
 
-    children: typing.Collection['JugglerTask']
+    children: list['JugglerTask']
     DEFAULT_KEY = 'NOT_INITIALIZED'
     MAX_SUMMARY_LENGTH = 70
     DEFAULT_SUMMARY = 'Task is not initialized'
@@ -1109,6 +1109,12 @@ task {id} "{key} {description}" {{
                         )
                         self.properties['time'] = JugglerTaskTime()
 
+    def sort(self, *, key=None, reverse=False):
+        if self.children:
+            self.children.sort(key=key, reverse=reverse)
+            for child in self.children:
+                child.sort(key=key, reverse=reverse)
+
 
 class Epic(JugglerTask):
 
@@ -1357,6 +1363,10 @@ class JiraJuggler:
             task.adjust_flags(extras)
             task.adjust_priority(extras)
 
+        juggler_tasks.sort(key=lambda i: i.properties['priority'].value, reverse=True)
+        for task in juggler_tasks:
+            task.sort(key=lambda i: i.properties['priority'].value, reverse=True)
+
         if kwargs.get('milestone'):
             for task in juggler_tasks:
                 task.fix_time(kwargs.get('weeklymax'))
@@ -1387,7 +1397,7 @@ supplement task %(id)s {
         extras = {}
         with open(filepath, newline='') as csvfile:
             for row in csv.reader(csvfile):
-                if row[0].startswith('#'):
+                if not row[0] or row[0].startswith('#'):
                     continue
                 extras[row[0]] = TaskExtra(
                     sprint=row[1] or None,
