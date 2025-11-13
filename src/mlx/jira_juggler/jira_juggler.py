@@ -23,7 +23,7 @@ from itertools import chain
 from operator import attrgetter
 from pathlib import Path
 
-from dateutil import parser
+from dateutil import parser, tz
 from decouple import config
 from jira import JIRA, JIRAError
 from natsort import natsorted, ns
@@ -816,12 +816,25 @@ class JugglerTaskComplete(JugglerTaskProperty):
         progress = getattr(jira_issue.fields, 'progress', None)
         if progress and progress.progress and progress.total:
             self.value = math.ceil(100 * progress.progress / progress.total)
-        elif jira_issue.fields.status.name.lower() in ('in progress',):
+        elif jira_issue.fields.status.name.lower() in ('in progress', 'reopened'):
             self.value = 50
         elif jira_issue.fields.status.name.lower() in DEVELOPED_STATUSES:
             self.value = 80
         elif jira_issue.fields.status.name.lower() in DONE_STATUSES + RESOLVED_STATUSES + PENDING_STATUSES:
             self.value = 100
+        if self.value == 0:
+            self.value = self.extract_status_from_history(jira_issue)
+
+    def extract_status_from_history(self, issue):
+        for change in sorted(issue.changelog.histories, key=attrgetter('created'), reverse=True):
+            for item in change.items:
+                if item.field.lower() == 'status':
+                    status = item.toString.lower()
+                    if status in RESOLVED_STATUSES + DEVELOPED_STATUSES:
+                        return 80
+                    elif status in PROGRESS_STATUSES:
+                        return 50
+        return 0
 
 
 class JugglerTask:
@@ -1448,7 +1461,7 @@ supplement task %(id)s {
         return extras
 
     @staticmethod
-    def link_to_preceding_task(tasks, weeklymax=5, current_date=datetime.datetime.now(), **kwargs):
+    def link_to_preceding_task(tasks, weeklymax=5, current_date=datetime.datetime.now(tz.tzutc()), **kwargs):
         """Links task to preceding task with the same assignee.
 
         If the task has been resolved, 'end' is added instead of 'depends' no matter what, followed by the
@@ -1724,7 +1737,7 @@ def main():
     argpar.add_argument('-w', '--weeklymax', default=5, type=int,
                         help='Number of allocated workdays per week used to approximate '
                              'start time of unresolved tasks with logged time')
-    argpar.add_argument('-c', '--current-date', default=datetime.datetime.now(), type=parser.isoparse,
+    argpar.add_argument('-c', '--current-date', default=datetime.datetime.now(tz.tzutc()), type=parser.isoparse,
                         help='Specify the offset-naive date to use for calculation as current date. If no value is '
                              'specified, the current value of the system clock is used.')
     argpar.add_argument('-m', '--milestone', required=False,
