@@ -1412,8 +1412,8 @@ class JiraJuggler:
         for task in juggler_tasks:
             task.sort(key=lambda i: i.properties['priority'].value, reverse=True)
 
-        for task in juggler_tasks:
-            task.shift_in_progress_to(kwargs['current_date'])
+        # for task in juggler_tasks:
+        #     task.shift_in_progress_to(kwargs['current_date'])
 
         if kwargs.get('milestone'):
             for task in juggler_tasks:
