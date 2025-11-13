@@ -1183,6 +1183,11 @@ class BacklogItem(JugglerTask):
                             to_identifier(manual_testing_dependency.key)
                         )
 
+        if not self.properties['time'].is_empty and self.properties['time'].name == 'fact:end' and not self.is_complete():
+            self.properties['time'].clear()
+        if not self.properties['time'].is_empty and self.properties['time'].name == 'fact:start' and self.todo():
+            self.properties['time'].clear()
+
     def shift_unstarted_tasks_to_milestone(self, extras, milestone):
         if not self.is_dor():
             milestone = "${sprint_non_dor}"
