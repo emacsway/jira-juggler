@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77", "wheel", "setuptools_scm>=7.1.0"]
+requires = ["setuptools>=77", "wheel", "setuptools_scm>=7.1.0", "businesstimedelta"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

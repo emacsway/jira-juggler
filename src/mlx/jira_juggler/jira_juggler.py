@@ -14,8 +14,9 @@ import math
 import operator
 import re
 import typing
+import businesstimedelta
 from abc import ABC
-from datetime import datetime, time, timedelta
+import datetime
 from functools import cmp_to_key
 from getpass import getpass
 from itertools import chain
@@ -110,7 +111,7 @@ def to_identifier(key):
 
 
 def to_juggler_date(date):
-    """Converts given datetime object to a string that can be interpreted by TaskJuggler
+    """Converts given datetime.datetime object to a string that can be interpreted by TaskJuggler
 
     The resolution is 60 minutes.
 
@@ -131,13 +132,13 @@ def calculate_weekends(date, workdays_passed, weeklymax):
     Args:
         date (datetime.datetime): Date and time specification to use as a starting point
         workdays_passed (float): Number of workdays passed since the given date
-        weeklymax (float): Number of allocated workdays per week
+        weeklymax (int): Number of allocated workdays per week
 
     Returns:
         int: The number of weekends between the given date and the amount of weekdays that have passed since then
     """
     weekend_count = 0
-    workday_percentage = (date - datetime.combine(date.date(), time(hour=9))).seconds / JugglerTaskEffort.FACTOR
+    workday_percentage = (date - datetime.datetime.combine(date.date(), datetime.time(hour=9))).seconds / JugglerTaskEffort.FACTOR
     date_as_weekday = date.weekday() + workday_percentage
     if date_as_weekday > weeklymax:
         date_as_weekday = weeklymax
@@ -147,24 +148,25 @@ def calculate_weekends(date, workdays_passed, weeklymax):
     return weekend_count
 
 
-def add_working_days(from_date, add_days, weekly_max):
-    business_days_to_add = add_days
-    current_date = from_date
-    if add_days > 0:
-        while business_days_to_add > 0:
-            current_date += timedelta(days=1)
-            weekday = current_date.weekday()
-            if weekday >= weekly_max:  # sunday = 6
-                continue
-            business_days_to_add -= 1
-    else:
-        while business_days_to_add < 0:
-            current_date -= timedelta(days=1)
-            weekday = current_date.weekday()
-            if weekday >= weekly_max:  # sunday = 6
-                continue
-            business_days_to_add += 1
-    return current_date
+class AddWorkingDays:
+    def __init__(self, weeklymax):
+        self._workday = businesstimedelta.WorkDayRule(
+            start_time=datetime.time(9),
+            end_time=datetime.time(18),
+            working_days=list(range(weeklymax)))
+
+        # Take out the lunch break
+        self._lunch_break = businesstimedelta.LunchTimeRule(
+            start_time=datetime.time(12),
+            end_time=datetime.time(13),
+            working_days=list(range(weeklymax)))
+
+        # Combine the two
+        self._business_hrs = businesstimedelta.Rules([self._workday, self._lunch_break])
+
+    def __call__(self, from_date, add_days):
+        delta = businesstimedelta.BusinessTimeDelta(self._business_hrs, datetime.timedelta(days=add_days))
+        return from_date + delta
 
 
 def to_username(value):
@@ -750,7 +752,7 @@ class JugglerTaskTime(JugglerTaskProperty):
     def do_get_start_date(self, issue):
         dt = getattr(issue.fields, 'customfield_10014', None)
         if dt:
-            dt = datetime.strptime(dt, "%Y-%m-%d").date()
+            dt = datetime.datetime.strptime(dt, "%Y-%m-%d").date()
             return dt
         return None
 
@@ -833,6 +835,8 @@ class JugglerTask:
         IMPROVEMENT = 'Improvement'
         FEATURE = 'New Feature'
 
+    add_working_days: AddWorkingDays
+    focus_factor = 0.7
     children: list['JugglerTask']
     DEFAULT_KEY = 'NOT_INITIALIZED'
     MAX_SUMMARY_LENGTH = 70
@@ -1019,11 +1023,27 @@ task {id} "{description}" {{
         else:
             return not self.properties['effort'].is_empty
 
+    def todo(self):
+        if self.children:
+            return all(child.todo() for child in self.children)
+        else:
+            return self.properties['complete'].is_empty
+
     def in_progress(self):
         if self.children:
-            return any(child.in_progress() for child in self.children)  # all()?
+            if any(child.in_progress() for child in self.children):
+                return True
+            complete = any(child.is_complete() for child in self.children)
+            todo = any(child.todo() for child in self.children)
+            return complete and todo
         else:
-            return not self.properties['complete'].is_empty
+            return 0 < self.properties['complete'].value < 100
+
+    def is_complete(self):
+        if self.children:
+            return all(child.is_complete() for child in self.children)
+        else:
+            return self.properties['complete'].value == 100
 
     def adjust_flags(self, extras):
         if self.key in extras:
@@ -1033,12 +1053,6 @@ task {id} "{description}" {{
         if self.children:
             for child in self.children:
                 child.adjust_flags(extras)
-
-    def is_todo(self):
-        if self.children:
-            return all(child.is_todo() for child in self.children)
-        else:
-            return self.properties['time'].is_empty
 
     def collect_todo_tasks(self, collector: Registry):
         if self.time_is_empty():
@@ -1066,40 +1080,40 @@ task {id} "{description}" {{
                 return False
         return True
 
-    def max_time(self, weekly_max) -> datetime | None:
+    def max_time(self) -> datetime.datetime | None:
         dts = []
         if not self.properties['time'].is_empty:
             if 'end' in self.properties['time'].name:
                 end_time = self.properties['time'].value
             else:
                 start_time = self.properties['time'].value
-                working_days = self.properties['effort'].value / 0.7  # focus-factor
-                end_time = add_working_days(start_time, working_days, weekly_max)
+                working_days = self.properties['effort'].value / self.focus_factor
+                end_time = self.add_working_days(start_time, working_days)
             dts.append(end_time)
         for child in self.children:
-            dt = child.max_time(weekly_max)
+            dt = child.max_time()
             if dt:
                 dts.append(dt)
         if dts:
             return max(dts)
         return None
 
-    def fix_time(self, weekly_max):
+    def fix_time(self):
         if self.children:
             for child in self.children:
-                child.fix_time(weekly_max)
+                child.fix_time()
         for dep in self.bottom_up_deps():
             if isinstance(dep, Spike):
                 if dep.is_resolved:
-                    dt = dep.max_time(weekly_max)
+                    dt = dep.max_time()
                     if dt is not None:
                         if not self.properties['time'].is_empty:
                             if 'start' in self.properties['time'].name:
                                 start_time = self.properties['time'].value
                             else:
                                 end_time = self.properties['time'].value
-                                days_spent = self.properties['effort'].value / 0.7  # focus-factor
-                                start_time = add_working_days(end_time, -days_spent, weekly_max)
+                                days_spent = self.properties['effort'].value / self.focus_factor
+                                start_time = self.add_working_days(end_time, -days_spent)
                             if dt > start_time:
                                 logging.warning(
                                     """Fix time for %s "%s" %s because of resolved dependency %s "%s" %s""",
@@ -1115,6 +1129,17 @@ task {id} "{description}" {{
                             dep.key, dep.summary
                         )
                         self.properties['time'] = JugglerTaskTime()
+
+    def shift_in_progress_to(self, current_date):
+        if self.children:
+            for child in self.children:
+                child.shift_in_progress_to(current_date)
+        elif not self.time_is_empty():
+            progress = self.properties['complete'].value
+            if 0 < progress < 100:
+                self.properties['time'].name = 'fact:start'
+                days_spent = self.properties['effort'].value / self.focus_factor
+                self.properties['time'].value = self.add_working_days(current_date, -days_spent)
 
     def sort(self, *, key=None, reverse=False):
         if self.children:
@@ -1165,7 +1190,7 @@ class BacklogItem(JugglerTask):
             if self.children:
                 for child in self.children:
                     child.adjust_priority(extras)
-        elif not self.is_dor() and not self.in_progress():
+        elif not self.is_dor() and self.todo():
             self.properties['priority'].value = 1
         elif self.children:
             for child in self.children:
@@ -1356,7 +1381,7 @@ class JiraJuggler:
         Args:
             list: A list of JugglerTask instances
         """
-
+        JugglerTask.add_working_days = staticmethod(AddWorkingDays(kwargs.get('weeklymax')))
         if kwargs.get('sprint_field_name'):
             kwargs['sprint_field_name'], sprint_re_pattern, sprint_re_repl = kwargs['sprint_field_name'].split('|')
             JugglerTask.sprint_accessor = staticmethod(make_sprint_accessor(
@@ -1380,9 +1405,12 @@ class JiraJuggler:
         for task in juggler_tasks:
             task.sort(key=lambda i: i.properties['priority'].value, reverse=True)
 
+        for task in juggler_tasks:
+            task.shift_in_progress_to(kwargs['current_date'])
+
         if kwargs.get('milestone'):
             for task in juggler_tasks:
-                task.fix_time(kwargs.get('weeklymax'))
+                task.fix_time()
 
             collector = Registry()
             for task in juggler_tasks:
@@ -1420,7 +1448,7 @@ supplement task %(id)s {
         return extras
 
     @staticmethod
-    def link_to_preceding_task(tasks, weeklymax=5.0, current_date=datetime.now(), **kwargs):
+    def link_to_preceding_task(tasks, weeklymax=5, current_date=datetime.datetime.now(), **kwargs):
         """Links task to preceding task with the same assignee.
 
         If the task has been resolved, 'end' is added instead of 'depends' no matter what, followed by the
@@ -1434,8 +1462,8 @@ supplement task %(id)s {
 
         Args:
             tasks (list): List of JugglerTask instances to modify
-            weeklymax (float): Number of allocated workdays per week
-            current_date (datetime.datetime): Offset-naive datetime to treat as the current date
+            weeklymax (int): Number of allocated workdays per week
+            current_date (datetime.datetime): Offset-naive datetime.datetime to treat as the current date
         """
         id_to_task_map = {to_identifier(task.key): task for task in tasks}
         unresolved_tasks = {}
@@ -1465,7 +1493,7 @@ supplement task %(id)s {
                             days_spent = task.issue.fields.timespent // 3600 / 8
                             weekends = calculate_weekends(current_date, days_spent, weeklymax)
                             days_per_weekend = min(2, 7 - weeklymax)
-                            start_time = current_date - timedelta(days=(days_spent + weekends * days_per_weekend))
+                            start_time = current_date - datetime.datetime(days=(days_spent + weekends * days_per_weekend))
                         time_property.name = 'start'
                         time_property.value = start_time
 
@@ -1531,7 +1559,7 @@ supplement task %(id)s {
             issue_key (str): Name of the JIRA issue
 
         Returns:
-            datetime.datetime/None: Start date as a datetime object or None if the sprint does not have a start date
+            datetime.datetime/None: Start date as a datetime.datetime object or None if the sprint does not have a start date
         """
         start_date_match = re.search("startDate=(.+?),", sprint_info)
         if start_date_match:
@@ -1660,7 +1688,7 @@ def extract_start_date(sprint_info, issue_key):
         issue_key (str): Name of the JIRA issue
 
     Returns:
-        datetime.datetime/None: Start date as a datetime object or None if the sprint does not have a start date
+        datetime.datetime/None: Start date as a datetime.datetime object or None if the sprint does not have a start date
     """
     start_date_match = re.search("startDate=(.+?),", sprint_info)
     if start_date_match:
@@ -1693,10 +1721,10 @@ def main():
     argpar.add_argument('-s', '--sort-on-sprint', dest='sprint_field_name', default='',
                         help='Sort unresolved tasks by using field name that stores sprint(s), e.g. customfield_10851, '
                              'in addition to the original order')
-    argpar.add_argument('-w', '--weeklymax', default=5.0, type=float,
+    argpar.add_argument('-w', '--weeklymax', default=5, type=int,
                         help='Number of allocated workdays per week used to approximate '
                              'start time of unresolved tasks with logged time')
-    argpar.add_argument('-c', '--current-date', default=datetime.now(), type=parser.isoparse,
+    argpar.add_argument('-c', '--current-date', default=datetime.datetime.now(), type=parser.isoparse,
                         help='Specify the offset-naive date to use for calculation as current date. If no value is '
                              'specified, the current value of the system clock is used.')
     argpar.add_argument('-m', '--milestone', required=False,
