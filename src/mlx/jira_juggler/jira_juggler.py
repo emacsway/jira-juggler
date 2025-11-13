@@ -758,21 +758,14 @@ class JugglerTaskTime(JugglerTaskProperty):
 
     def do_determine_fact_start_date(self, issue):
         dt = None
-        for change in sorted(issue.changelog.histories, key=attrgetter('created'), reverse=False):
+        for change in sorted(issue.changelog.histories, key=attrgetter('created'), reverse=True):
             for item in change.items:
                 if item.field.lower() == 'status':
                     status = item.toString.lower()
                     if status in PROGRESS_STATUSES:
                         return parser.isoparse(change.created)
-
-        if dt is None:
-            for change in sorted(issue.changelog.histories, key=attrgetter('created'), reverse=False):
-                for item in change.items:
-                    if item.field.lower() == 'status':
-                        status = item.toString.lower()
-                        if status in DEVELOPED_STATUSES:
-                            return parser.isoparse(change.created)
-
+                    elif status in DEVELOPED_STATUSES and dt is None:
+                        dt = parser.isoparse(change.created)
         return dt
 
     def do_determine_fact_end_date(self, issue):
