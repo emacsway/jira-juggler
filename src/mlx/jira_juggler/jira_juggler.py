@@ -165,7 +165,7 @@ class AddWorkingDays:
         self._business_hrs = businesstimedelta.Rules([self._workday, self._lunch_break])
 
     def __call__(self, from_date, add_days):
-        delta = businesstimedelta.BusinessTimeDelta(self._business_hrs, datetime.timedelta(days=add_days))
+        delta = businesstimedelta.BusinessTimeDelta(self._business_hrs, timedelta=datetime.timedelta(days=add_days))
         return from_date + delta
 
 
