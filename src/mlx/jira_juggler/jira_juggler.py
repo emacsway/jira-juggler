@@ -741,10 +741,11 @@ class JugglerTaskTime(JugglerTaskProperty):
         fact_end = self.do_determine_fact_end_date(jira_issue)
         logging.debug("""Date: %s %r %r""", jira_issue.key, start, fact_start, fact_end)
         if fact_end:
-            # if jira_issue.fields.status.name.lower() not in TODO_STATUSES:
-            self.name, self.value = 'fact:end', fact_end
+            if jira_issue.fields.status.name.lower() not in TODO_STATUSES:
+                self.name, self.value = 'fact:end', fact_end
         elif fact_start:
-            self.name, self.value = 'fact:start', fact_start
+            if jira_issue.fields.status.name.lower() not in TODO_STATUSES:
+                self.name, self.value = 'fact:start', fact_start
         elif start:
             self.name, self.value = 'start', start
         logging.debug("""Set date: "%s", "%r", "%r""""", jira_issue.key, self.name, self.value)
