@@ -1224,7 +1224,7 @@ class DefectMixin:
         #     jira_issue.pert = PertEstimate(0.3, 0.5, 2.5)
         super().load_from_jira_issue(jira_issue)
         if self.properties['effort'].is_empty:
-            self.properties['effort'].update(PertEstimate(0.3, 0.5, 2.5))
+            self.properties['effort'].update(PertEstimate(0.2, 0.4, 2))
 
 
 class Defect(DefectMixin, BacklogItem):
