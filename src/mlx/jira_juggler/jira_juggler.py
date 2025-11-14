@@ -871,6 +871,8 @@ task {id} "{description}" {{
             return QaAutoSubtask(registry, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK and "[qa manual]" in jira_issue.fields.summary.lower():
             return QaManualSubtask(registry, jira_issue, parent)
+        elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK and re.match(r"\[[^\[\]]*bug\].+", jira_issue.fields.summary.lower()) != None:
+            return DefectSubtask(registry, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.DEFECT:
             return Defect(registry, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK:
@@ -1216,11 +1218,17 @@ class BacklogItem(JugglerTask):
                 child.adjust_priority(extras)
 
 
-class Defect(BacklogItem):
+class DefectMixin:
     def load_from_jira_issue(self, jira_issue):
+        # if jira_issue.pert.expected_duration == 0:
+        #     jira_issue.pert = PertEstimate(0.3, 0.5, 2.5)
         super().load_from_jira_issue(jira_issue)
         if self.properties['effort'].is_empty:
             self.properties['effort'].update(PertEstimate(0.3, 0.5, 2.5))
+
+
+class Defect(DefectMixin, BacklogItem):
+    pass
 
 
 class Spike(JugglerTask):
@@ -1237,6 +1245,10 @@ class Subtask(JugglerTask):
     def adjust_priority(self, extras):
         super().adjust_priority(extras)
         self.properties['priority'].set_relatively_on(self.parent.properties['priority'].value)
+
+
+class DefectSubtask(DefectMixin, Subtask):
+    pass
 
 
 class QaAutoSubtask(Subtask):
