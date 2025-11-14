@@ -563,6 +563,10 @@ class JugglerTaskEffort(JugglerTaskProperty):
             self.value = self.DEFAULT_VALUE
             logging.warning('No estimate found for %s, assuming %s%s', jira_issue.key, self.DEFAULT_VALUE, self.UNIT)
 
+    def update(self, pert: IPertEstimate):
+        self.pert = pert
+        self.value = round(self.pert.expected_duration, 3)
+
     def validate(self, task, tasks):
         """Validates (and corrects) the current task property
 
@@ -838,6 +842,7 @@ class JugglerTask:
         EPIC = 'Epic'
         SPIKE = 'Spike'
         STORY = 'Story'
+        DEFECT = 'Bug'
         SUBTASK = 'Sub-task'
         IMPROVEMENT = 'Improvement'
         FEATURE = 'New Feature'
@@ -866,6 +871,8 @@ task {id} "{description}" {{
             return QaAutoSubtask(registry, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK and "[qa manual]" in jira_issue.fields.summary.lower():
             return QaManualSubtask(registry, jira_issue, parent)
+        elif jira_issue.fields.issuetype.name == cls.TYPE.DEFECT:
+            return Defect(registry, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK:
             return Subtask(registry, jira_issue, parent)
         else:
@@ -1207,6 +1214,13 @@ class BacklogItem(JugglerTask):
         elif self.children:
             for child in self.children:
                 child.adjust_priority(extras)
+
+
+class Defect(BacklogItem):
+    def load_from_jira_issue(self, jira_issue):
+        super().load_from_jira_issue(jira_issue)
+        if self.properties['effort'].is_empty:
+            self.properties['effort'].update(PertEstimate(0.3, 0.5, 2.5))
 
 
 class Spike(JugglerTask):
