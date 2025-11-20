@@ -366,11 +366,20 @@ class JugglerTaskPriority(JugglerTaskProperty):
     DEFAULT_NAME = 'priority'
     DEFAULT_VALUE = _PRIORITY_MAPPING['medium']
 
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, value):
+        self._value = value
+        self._leaf_value = value
+
     def set_relatively_on(self, parent_priority=None):
         if parent_priority is not None:
-            relative_priority = round((self.value - self._PRIORITY_MAPPING['medium']) * 0.03)
+            relative_priority = round((self._leaf_value - self._PRIORITY_MAPPING['medium']) * 0.03)
             if relative_priority != 0:
-                self.value = parent_priority + relative_priority
+                self._value = parent_priority + relative_priority
 
     def load_from_jira_issue(self, jira_issue):
         if jira_issue.fields.priority:
