@@ -14,7 +14,6 @@ import math
 import operator
 import re
 import typing
-import businesstimedelta
 from abc import ABC
 import datetime
 from functools import cmp_to_key
@@ -27,6 +26,8 @@ from dateutil import parser, tz
 from decouple import config
 from jira import JIRA, JIRAError
 from natsort import natsorted, ns
+
+from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
@@ -146,27 +147,6 @@ def calculate_weekends(date, workdays_passed, weeklymax):
     if remaining_workdays_passed > 0:
         weekend_count += 1 + (remaining_workdays_passed // weeklymax)
     return weekend_count
-
-
-class AddWorkingDays:
-    def __init__(self, weeklymax):
-        self._workday = businesstimedelta.WorkDayRule(
-            start_time=datetime.time(9),
-            end_time=datetime.time(18),
-            working_days=list(range(weeklymax)))
-
-        # Take out the lunch break
-        self._lunch_break = businesstimedelta.LunchTimeRule(
-            start_time=datetime.time(12),
-            end_time=datetime.time(13),
-            working_days=list(range(weeklymax)))
-
-        # Combine the two
-        self._business_hrs = businesstimedelta.Rules([self._workday, self._lunch_break])
-
-    def __call__(self, from_date, add_days):
-        delta = businesstimedelta.BusinessTimeDelta(self._business_hrs, timedelta=datetime.timedelta(days=add_days))
-        return from_date + delta
 
 
 def to_username(value):

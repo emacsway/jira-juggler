@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src/"]
-include = ["mlx.jira_juggler"]
+include = ["mlx.jira_juggler", "mlx.jira_juggler.utils"]
 
 [tool.setuptools_scm]
 write_to = "src/mlx/jira_juggler/_version.py"
