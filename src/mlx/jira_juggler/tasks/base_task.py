@@ -107,7 +107,7 @@ task {id} "{description}" {{
         self.properties['complete'] = JugglerTaskComplete(jira_issue)
         self.properties['priority'] = JugglerTaskPriority(jira_issue)
         self.properties['flags'] = JugglerTaskFlags(jira_issue)
-        self.children = [JugglerTask.factory(self.registry, child, self) for child in jira_issue.children]
+        self.children = [JugglerTask.factory(self.registry, self.to_username, child, self) for child in jira_issue.children]
         self.registry[to_identifier(self.key)] = self
 
     def validate(self, tasks, property_identifier):

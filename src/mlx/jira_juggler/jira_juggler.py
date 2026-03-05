@@ -16,7 +16,6 @@ from pathlib import Path
 import jira
 from dateutil import parser, tz
 from decouple import config
-from jira import JIRA, JIRAError
 from natsort import natsorted, ns
 
 from mlx.jira_juggler.tasks.base_task import JugglerTask
@@ -105,6 +104,7 @@ class JiraJuggler:
     """Class for task-juggling Jira results"""
     _jira_instance: jira.JIRA
     _to_username: ToUsername
+    _registry: Registry
 
     def __init__(self, endpoint, user, token, query, kids_query,  links=None):
         """Constructs a JIRA juggler object
@@ -118,8 +118,9 @@ class JiraJuggler:
         """
         logging.info('Jira endpoint: %s', endpoint)
 
-        self._jira_instance = JIRA(endpoint, basic_auth=(user, token), options={'rest_api_version': 3})
+        self._jira_instance = jira.JIRA(endpoint, basic_auth=(user, token), options={'rest_api_version': 3})
         self._to_username = ToUsername(self._jira_instance)
+        self._registry = Registry()
         if 'ORDER BY' not in query.upper():
             query = "%s ORDER BY priority DESC, created ASC" % query
         logging.info('Query: %s', query)
@@ -151,8 +152,7 @@ class JiraJuggler:
         Returns:
             list: A list of JugglerTask instances
         """
-        registry = Registry()
-        tasks = [JugglerTask.factory(registry, issue) for issue in self._load_issues(self.query)]
+        tasks = [JugglerTask.factory(self._registry, self._to_username, issue) for issue in self._load_issues(self.query)]
         self.validate_tasks(tasks)
         if sprint_field_name:
             self.sort_tasks_on_sprint(tasks, sprint_field_name)
@@ -172,7 +172,7 @@ class JiraJuggler:
                     expand='changelog',
                     nextPageToken=next_page_token
                 )
-            except JIRAError as err:
+            except jira.JIRAError as err:
                 logging.error(f'Failed to query JIRA: {err}')
                 if err.status_code == 401:
                     logging.error('Please check your JIRA credentials in the .env file or environment variables.')
@@ -243,7 +243,7 @@ class JiraJuggler:
     def do_get_pert_estimate(self, issue):
         try:
             pert_response = self._jira_instance.issue_property(issue.key, 'pert-estimation')
-        except JIRAError as e:
+        except jira.JIRAError as e:
             if e.status_code == 404:
                 return EmptyPertEstimate()
             else:
