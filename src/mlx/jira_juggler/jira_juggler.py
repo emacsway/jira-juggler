@@ -17,7 +17,6 @@ import typing
 from abc import ABC
 import datetime
 from functools import cmp_to_key
-from getpass import getpass
 from itertools import chain
 from operator import attrgetter
 from pathlib import Path
@@ -28,6 +27,7 @@ from jira import JIRA, JIRAError
 from natsort import natsorted, ns
 
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
+from mlx.jira_juggler.utils.auth import fetch_credentials
 
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
@@ -63,28 +63,6 @@ DONE_STATUSES = (
 JIRA_PAGE_SIZE = 50
 
 TAB = ' ' * 2
-
-
-def fetch_credentials():
-    """ Fetches the credentials from the .env file by default or, alternatively, from the user's input
-
-    Returns:
-        str: email address or username
-        str: API token or password
-    """
-    username = config('JIRA_USERNAME', default='')
-    api_token = config('JIRA_API_TOKEN', default='')
-    if not username:
-        username = input('JIRA email address (or username): ')
-    if not api_token:
-        password = config('JIRA_PASSWORD', default='')
-        if password:
-            logging.warning('Basic authentication with a JIRA password may be deprecated. '
-                            'Consider defining an API token as environment variable JIRA_API_TOKEN instead.')
-            return username, password
-        else:
-            api_token = getpass(f'JIRA API token (or password) for {username}: ')
-    return username, api_token
 
 
 def set_logging_level(loglevel):
