@@ -4,6 +4,8 @@ import jira
 
 from mlx.jira_juggler.utils import jirahandle
 
+__all__ = ('to_username', 'determine_username',)
+
 
 # FIXME:
 id_to_username_mapping = {}

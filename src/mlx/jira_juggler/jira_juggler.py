@@ -29,6 +29,7 @@ from mlx.jira_juggler.tasks.properties.allocate import JugglerTaskAllocate
 from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
 from mlx.jira_juggler.tasks.properties.constants import TODO_STATUSES, PROGRESS_STATUSES, DEVELOPED_STATUSES, \
     RESOLVED_STATUSES, PENDING_STATUSES, DONE_STATUSES, TAB
+from mlx.jira_juggler.tasks.properties.priority import JugglerTaskPriority
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.auth import fetch_credentials
 from mlx.jira_juggler.utils import jirahandle
@@ -130,45 +131,6 @@ def determine_links(jira_link_types, input_links):
             logging.warning(f"Failed to find links {missing_links} in your configuration in Jira")
         valid_links = unique_input_links - missing_links
     return valid_links
-
-
-class JugglerTaskPriority(JugglerTaskProperty):
-    """Class for the allocation (assignee) of a juggler task"""
-
-    _PRIORITY_MAPPING = {
-        'lowest': 200,
-        'low': 350,
-        'medium': 500,
-        'high': 650,
-        'highest': 800,
-    }
-
-    DEFAULT_NAME = 'priority'
-    DEFAULT_VALUE = _PRIORITY_MAPPING['medium']
-
-    @property
-    def value(self):
-        return self._value
-
-    @value.setter
-    def value(self, value):
-        self._value = value
-        self._leaf_value = value
-
-    def set_relatively_on(self, parent_priority=None):
-        if parent_priority is not None:
-            relative_priority = round((self._leaf_value - self._PRIORITY_MAPPING['medium']) * 0.03)
-            if relative_priority != 0:
-                self._value = parent_priority + relative_priority
-
-    def load_from_jira_issue(self, jira_issue):
-        if jira_issue.fields.priority:
-            self.value = self._PRIORITY_MAPPING[jira_issue.fields.priority.name.lower()]
-
-    def __str__(self):
-        if self.value != self.DEFAULT_VALUE:
-            return super().__str__()
-        return ''
 
 
 class IPertEstimate(metaclass=abc.ABCMeta):
