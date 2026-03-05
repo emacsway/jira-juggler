@@ -443,6 +443,7 @@ class EmptyPertEstimate(IPertEstimate):
 
 
 class PertEstimate:
+    MINIMAL_VALUE = 1.0 / 8
     _optimistic: float
     _nominal: float
     _pessimistic: float
@@ -454,9 +455,9 @@ class PertEstimate:
         assert pessimistic is not None
         assert pessimistic >= nominal
 
-        self._optimistic = optimistic
-        self._nominal = nominal
-        self._pessimistic = pessimistic
+        self._optimistic = max(optimistic, self.MINIMAL_VALUE)
+        self._nominal = max(nominal, self.MINIMAL_VALUE)
+        self._pessimistic = max(pessimistic, self.MINIMAL_VALUE)
 
     @property
     def optimistic(self) -> float:
@@ -630,8 +631,9 @@ class JugglerTaskDepends(JugglerTaskProperty):
     DEFAULT_VALUE = []
     PREFIX = ''
     links = set()
+    registry: Registry
 
-    def __init__(self, registry, jira_issue=None):
+    def __init__(self, registry: Registry, jira_issue: jira.resources.Issue | None = None):
         super().__init__(jira_issue)
         self.registry = registry
 
