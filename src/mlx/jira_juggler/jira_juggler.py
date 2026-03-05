@@ -31,8 +31,8 @@ from mlx.jira_juggler.tasks.properties.priority import JugglerTaskPriority
 from mlx.jira_juggler.tasks.properties.registry import Registry
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.auth import fetch_credentials
-from mlx.jira_juggler.utils import jirahandle
 from mlx.jira_juggler.utils.identifier import to_identifier
+from mlx.jira_juggler.utils.user import ToUsername
 
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
@@ -369,25 +369,25 @@ task {id} "{description}" {{
 '''
 
     @classmethod
-    def factory(cls, registry, jira_issue, parent=None) -> 'JugglerTask':
+    def factory(cls, registry, to_username, jira_issue, parent=None) -> 'JugglerTask':
         if jira_issue.fields.issuetype.name == cls.TYPE.EPIC:
-            return Epic(registry, jira_issue, parent)
+            return Epic(registry, to_username, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SPIKE or '[spike]' in jira_issue.fields.summary.lower():
-            return Spike(registry, jira_issue, parent)
+            return Spike(registry, to_username, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK and "[qa auto]" in jira_issue.fields.summary.lower():
-            return QaAutoSubtask(registry, jira_issue, parent)
+            return QaAutoSubtask(registry, to_username, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK and "[qa manual]" in jira_issue.fields.summary.lower():
-            return QaManualSubtask(registry, jira_issue, parent)
+            return QaManualSubtask(registry, to_username, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK and re.match(r"\[[^\[\]]*bug\].+", jira_issue.fields.summary.lower()) != None:
-            return DefectSubtask(registry, jira_issue, parent)
+            return DefectSubtask(registry, to_username, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.DEFECT:
-            return Defect(registry, jira_issue, parent)
+            return Defect(registry, to_username, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SUBTASK:
-            return Subtask(registry, jira_issue, parent)
+            return Subtask(registry, to_username, jira_issue, parent)
         else:
-            return BacklogItem(registry, jira_issue, parent)
+            return BacklogItem(registry, to_username, jira_issue, parent)
 
-    def __init__(self, registry, jira_issue=None, parent=None):
+    def __init__(self, registry, to_username, jira_issue=None, parent=None):
         logging.info('Create JugglerTask for %s', jira_issue.key)
 
         self.key = self.DEFAULT_KEY
@@ -398,6 +398,7 @@ task {id} "{description}" {{
         self._resolved_at_date = None
         self.parent = parent
         self.registry = registry
+        self.to_username = to_username
 
         if jira_issue:
             self.load_from_jira_issue(jira_issue)
@@ -419,7 +420,7 @@ task {id} "{description}" {{
         self.summary = (summary[:self.MAX_SUMMARY_LENGTH] + '...') if len(summary) > self.MAX_SUMMARY_LENGTH else summary
         if self.is_resolved:
             self.resolved_at_date = self.determine_resolved_at_date()
-        self.properties['allocate'] = JugglerTaskAllocate(jira_issue)
+        self.properties['allocate'] = JugglerTaskAllocate(self.to_username, jira_issue)
         self.properties['effort'] = JugglerTaskEffort(jira_issue)
         self.properties['depends'] = JugglerTaskDepends(self.registry, jira_issue)
         self.properties['fact:depends'] = JugglerTaskFactDepends(self.registry)
@@ -768,6 +769,8 @@ class QaManualSubtask(Subtask):
 
 class JiraJuggler:
     """Class for task-juggling Jira results"""
+    _jira_instance: jira.JIRA
+    _to_username: ToUsername
 
     def __init__(self, endpoint, user, token, query, kids_query,  links=None):
         """Constructs a JIRA juggler object
@@ -779,18 +782,17 @@ class JiraJuggler:
             query (str): The query to run
             links (set/None): List of issue link type inward/outward links; None to use the default configuration
         """
-        global id_to_username_mapping
-        id_to_username_mapping = {}
         logging.info('Jira endpoint: %s', endpoint)
 
-        setattr(jirahandle, 'jira_instance', JIRA(endpoint, basic_auth=(user, token), options={'rest_api_version': 3}))
+        self._jira_instance = JIRA(endpoint, basic_auth=(user, token), options={'rest_api_version': 3})
+        self._to_username = ToUsername(self._jira_instance)
         if 'ORDER BY' not in query.upper():
             query = "%s ORDER BY priority DESC, created ASC" % query
         logging.info('Query: %s', query)
         self.query = query
         self.kids_query = kids_query
 
-        all_jira_link_types = jirahandle.jira_instance.issue_link_types()
+        all_jira_link_types = self._jira_instance.issue_link_types()
         JugglerTaskDepends.links = determine_links(all_jira_link_types, links)
 
     @classmethod
@@ -830,7 +832,7 @@ class JiraJuggler:
         result = []
         while True:
             try:
-                response = jirahandle.jira_instance.enhanced_search_issues(
+                response = self._jira_instance.enhanced_search_issues(
                     query,
                     maxResults=JIRA_PAGE_SIZE,
                     expand='changelog',
@@ -906,7 +908,7 @@ class JiraJuggler:
 
     def do_get_pert_estimate(self, issue):
         try:
-            pert_response = jirahandle.jira_instance.issue_property(issue.key, 'pert-estimation')
+            pert_response = self._jira_instance.issue_property(issue.key, 'pert-estimation')
         except JIRAError as e:
             if e.status_code == 404:
                 return EmptyPertEstimate()

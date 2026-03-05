@@ -15,6 +15,10 @@ class JugglerTaskAllocate(JugglerTaskProperty):
     DEFAULT_NAME = 'allocate'
     DEFAULT_VALUE = '"not assigned"'
 
+    def __init__(self, to_username, jira_issue: jira.Issue | None = None):
+        super().__init__(jira_issue)
+        self._to_username = to_username
+
     def load_from_jira_issue(self, jira_issue: jira.Issue):
         """Loads the object with data from a Jira issue.
 
@@ -32,9 +36,9 @@ class JugglerTaskAllocate(JugglerTaskProperty):
                         if not before_resolved:
                             self.value = getattr(item, 'from', None)
                             if self.value:
-                                self.value = to_username(self.value)
+                                self.value = self._to_username(self.value)
                         else:
-                            self.value = to_username(item.to)
+                            self.value = self._to_username(item.to)
                             return  # got last assignee before transition to Approved/Resolved status
                     elif item.field.lower() == 'status' and item.toString.lower() in RESOLVED_STATUSES:
                         before_resolved = True
@@ -43,7 +47,7 @@ class JugglerTaskAllocate(JugglerTaskProperty):
 
         if self.is_empty:
             if getattr(jira_issue.fields, 'assignee', None):
-                self.value = to_username(jira_issue.fields.assignee)
+                self.value = self._to_username(jira_issue.fields.assignee)
             else:
                 self.value = self.DEFAULT_VALUE
 

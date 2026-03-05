@@ -2,34 +2,36 @@ import logging
 
 import jira
 
-from mlx.jira_juggler.utils import jirahandle
-
-__all__ = ('to_username', 'determine_username',)
+__all__ = ('ToUsername', 'determine_username',)
 
 
-# FIXME:
-id_to_username_mapping = {}
+class ToUsername:
+    _jira_instance: jira.JIRA
+    _id_to_username_mapping: dict[str, str]
 
+    def __init__(self, jira_instance: jira.JIRA):
+        self._jira_instance = jira_instance
+        self._id_to_username_mapping = {}
 
-def to_username(value):
-    """Converts the given value to a username (user ID), if needed, while caching the result.
+    def __call__(self, value):
+        """Converts the given value to a username (user ID), if needed, while caching the result.
 
-    Args:
-        value (str/jira.User): String (account ID or user ID) or User instance
+        Args:
+            value (str/jira.User): String (account ID or user ID) or User instance
 
-    Returns:
-        str: The corresponding username
-    """
-    user_id = value.accountId if hasattr(value, 'accountId') else str(value)
-    if user_id in id_to_username_mapping:
-        return id_to_username_mapping[user_id]
+        Returns:
+            str: The corresponding username
+        """
+        user_id = value.accountId if hasattr(value, 'accountId') else str(value)
+        if user_id in self._id_to_username_mapping:
+            return self._id_to_username_mapping[user_id]
 
-    if not isinstance(value, str):
-        id_to_username_mapping[user_id] = determine_username(value)
-    elif len(value) >= 24:  # accountId
-        user = jirahandle.jira_instance.user(user_id)
-        id_to_username_mapping[user_id] = determine_username(user)
-    return id_to_username_mapping.get(user_id, value)
+        if not isinstance(value, str):
+            self._id_to_username_mapping[user_id] = determine_username(value)
+        elif len(value) >= 24:  # accountId
+            user = self._jira_instance.user(user_id)
+            self._id_to_username_mapping[user_id] = determine_username(user)
+        return self._id_to_username_mapping.get(user_id, value)
 
 
 def determine_username(user: jira.User):
