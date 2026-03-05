@@ -11,6 +11,7 @@ from collections import namedtuple
 
 import unittest
 
+import mlx.jira_juggler.tasks.base_task
 import mlx.jira_juggler.tasks.properties.constants
 import mlx.jira_juggler.tasks.properties.effort
 
@@ -64,7 +65,7 @@ ISSUE_LINK_TYPES = [
 
 
 class JiraJuggler(dut.JiraJuggler):
-    def do_get_pert_estimate(self, task: dut.JugglerTask):
+    def do_get_pert_estimate(self, task: mlx.jira_juggler.tasks.base_task.JugglerTask):
         return mlx.jira_juggler.tasks.properties.effort.EmptyPertEstimate()
 
 
