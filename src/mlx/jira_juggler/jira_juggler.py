@@ -28,10 +28,11 @@ from mlx.jira_juggler.tasks.properties.constants import TODO_STATUSES, PROGRESS_
 from mlx.jira_juggler.tasks.properties.effort import EmptyPertEstimate, PertEstimate, CompositePertEstimate, \
     JugglerTaskEffort
 from mlx.jira_juggler.tasks.properties.priority import JugglerTaskPriority
+from mlx.jira_juggler.tasks.properties.registry import Registry
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.auth import fetch_credentials
 from mlx.jira_juggler.utils import jirahandle
-
+from mlx.jira_juggler.utils.identifier import to_identifier
 
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
@@ -50,18 +51,6 @@ def set_logging_level(loglevel):
     if not isinstance(numeric_level, int):
         raise ValueError('Invalid log level: %s' % loglevel)
     logging.basicConfig(level=numeric_level)
-
-
-def to_identifier(key):
-    """Converts given key to identifier, interpretable by TaskJuggler as a task-identifier
-
-    Args:
-        key (str): Key to be converted
-
-    Returns:
-        str: Valid task-identifier based on given key
-    """
-    return key.replace('-', '_')
 
 
 def to_juggler_date(date):
@@ -131,19 +120,6 @@ def determine_links(jira_link_types, input_links):
     return valid_links
 
 
-class Registry(dict):
-    def path(self, key):
-        if key not in self:
-            return key
-        path = []
-        task = self[key]
-        while task:
-            path.append(to_identifier(task.key))
-            task = task.parent
-        path.reverse()
-        return ".".join(path)
-
-
 class JugglerTaskDepends(JugglerTaskProperty):
     """Class for linking of a juggler task"""
 
@@ -153,7 +129,7 @@ class JugglerTaskDepends(JugglerTaskProperty):
     links = set()
     registry: Registry
 
-    def __init__(self, registry: Registry, jira_issue: jira.resources.Issue | None = None):
+    def __init__(self, registry: Registry, jira_issue: jira.Issue | None = None):
         super().__init__(jira_issue)
         self.registry = registry
 
