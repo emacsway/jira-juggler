@@ -26,43 +26,16 @@ from jira import JIRA, JIRAError
 from natsort import natsorted, ns
 
 from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
+from mlx.jira_juggler.tasks.properties.constants import TODO_STATUSES, PROGRESS_STATUSES, DEVELOPED_STATUSES, \
+    RESOLVED_STATUSES, PENDING_STATUSES, DONE_STATUSES, TAB
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.auth import fetch_credentials
 
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
 DEFAULT_OUTPUT = 'jira_export.tji'
-TODO_STATUSES = (
-    'to do',
-    'blocked',
-    'reopened',
-    'postponed',
-)
-PROGRESS_STATUSES = (
-    'in progress',
-)
-DEVELOPED_STATUSES = (
-    'ready for code review',
-    'in code review',
-)
-RESOLVED_STATUSES = (
-    'approved',
-    'resolved',
-    'merged to dev'
-)
-PENDING_STATUSES = (
-    'in testing',
-    'ready for testing on qa',
-    'ready for deployment',
-)
-DONE_STATUSES = (
-    'closed',
-    'cancelled',
-)
 
 JIRA_PAGE_SIZE = 50
-
-TAB = ' ' * 2
 
 
 def set_logging_level(loglevel):
@@ -209,7 +182,7 @@ class JugglerTaskAllocate(JugglerTaskProperty):
     DEFAULT_NAME = 'allocate'
     DEFAULT_VALUE = '"not assigned"'
 
-    def load_from_jira_issue(self, jira_issue):
+    def load_from_jira_issue(self, jira_issue: jira.Issue):
         """Loads the object with data from a Jira issue.
 
         The last assignee in the Analyzed state of the Jira issue is prioritized over the current assignee,

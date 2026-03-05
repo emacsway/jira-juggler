@@ -1,9 +1,8 @@
 import copy
 from abc import ABC
+from mlx.jira_juggler.tasks.properties.constants import TAB
 
-__all__ = ('JugglerTaskProperty', 'TAB',)
-
-TAB = ' ' * 2
+__all__ = ('JugglerTaskProperty',)
 
 
 class JugglerTaskProperty(ABC):

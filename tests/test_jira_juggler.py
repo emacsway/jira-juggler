@@ -11,6 +11,8 @@ from collections import namedtuple
 
 import unittest
 
+import mlx.jira_juggler.tasks.properties.constants
+
 try:
     from unittest.mock import MagicMock, patch, call
 except ImportError:
@@ -568,22 +570,22 @@ class TestJiraJuggler(unittest.TestCase):
         self.assertEqual(5, len(issues))
         self.assertEqual(self.ASSIGNEE1, issues[0].properties['allocate'].value)
         self.assertEqual(self.ESTIMATE1 / self.SECS_PER_DAY, issues[0].properties['effort'].value)
-        self.assertEqual(dut.TAB + 'end 2021-08-18-18:00-+0200\n', str(issues[0].properties['time']))
+        self.assertEqual(mlx.jira_juggler.tasks.properties.constants.TAB + 'end 2021-08-18-18:00-+0200\n', str(issues[0].properties['time']))
         self.assertEqual('', str(issues[0].properties['depends']))
 
         self.assertEqual(self.ASSIGNEE1, issues[1].properties['allocate'].value)
         self.assertEqual(3.2 + 2.4, issues[1].properties['effort'].value)
-        self.assertEqual(dut.TAB + 'start %{2021-08-23-13:00 - 9.125d}\n', str(issues[1].properties['time']))  # 3.2 days spent
+        self.assertEqual(mlx.jira_juggler.tasks.properties.constants.TAB + 'start %{2021-08-23-13:00 - 9.125d}\n', str(issues[1].properties['time']))  # 3.2 days spent
         self.assertEqual('', str(issues[1].properties['depends']))
 
         self.assertEqual(self.ASSIGNEE1, issues[2].properties['allocate'].value)
         self.assertEqual(self.ESTIMATE3 / self.SECS_PER_DAY, issues[2].properties['effort'].value)
-        self.assertEqual(f'{dut.TAB}depends !{self.ID1}, !{self.ID2}\n', str(issues[2].properties['depends']))
+        self.assertEqual(f'{mlx.jira_juggler.tasks.properties.constants.TAB}depends !{self.ID1}, !{self.ID2}\n', str(issues[2].properties['depends']))
 
         self.assertEqual('', str(issues[3].properties['depends']))
-        self.assertEqual(dut.TAB + 'start 2021-08-23-13:00\n', str(issues[3].properties['time']))  # start on current date
+        self.assertEqual(mlx.jira_juggler.tasks.properties.constants.TAB + 'start 2021-08-23-13:00\n', str(issues[3].properties['time']))  # start on current date
 
-        self.assertEqual(f'{dut.TAB}depends !{self.ID1}, !{self.ID2}\n', str(issues[4].properties['depends']))
+        self.assertEqual(f'{mlx.jira_juggler.tasks.properties.constants.TAB}depends !{self.ID1}, !{self.ID2}\n', str(issues[4].properties['depends']))
         self.assertEqual('', str(issues[4].properties['time']))  # no start date as it depends on an unresolved task
 
     def _mock_jira_issue(self, key, summary, assignee='', estimates=[], depends=[], histories=[], status="Open", email=''):
