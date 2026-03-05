@@ -202,10 +202,10 @@ task {id} "{description}" {{
             for child in self.children:
                 child.shift_unstarted_tasks_to_milestone(extras, milestone)
 
-    def get_sprint(self, sprint_backlogs):
+    def get_sprint(self, extras):
         sprint = None
-        if self.key in sprint_backlogs:
-            sprint = sprint_backlogs[self.key].sprint
+        if self.key in extras:
+            sprint = extras[self.key].sprint
         if not sprint and getattr(self, 'sprint', None):
             sprint = getattr(self, 'sprint').name
         return sprint

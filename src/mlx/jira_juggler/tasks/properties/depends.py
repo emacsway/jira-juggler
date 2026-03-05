@@ -65,10 +65,14 @@ class JugglerTaskDepends(JugglerTaskProperty):
         Returns:
             str: String representation of the task property in juggler syntax
         """
-        if self.value:
+        values = [self.registry.path(val) for val in self.value if val in self.registry or self._is_milestone(val)]
+        if values:
             valstr = ''
             for val in self.value:
-                val = self.registry.path(val)
+                if val in self.registry:
+                    val = self.registry.path(val)
+                elif not self._is_milestone(val):
+                    continue
                 if valstr:
                     valstr += ', '
                 valstr += self.VALUE_TEMPLATE.format(prefix=self.PREFIX,
@@ -77,3 +81,7 @@ class JugglerTaskDepends(JugglerTaskProperty):
             return self.TEMPLATE.format(prop=self.name,
                                         value=valstr)
         return ''
+
+    @staticmethod
+    def _is_milestone(key: str):
+        return key.startswith('deliveries.') or key.startswith('${')
