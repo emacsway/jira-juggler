@@ -6,7 +6,6 @@ This script queries Jira, and generates a task-juggler input file to generate a 
 """
 import abc
 import argparse
-import copy
 import csv
 import functools
 import logging
@@ -14,7 +13,6 @@ import math
 import operator
 import re
 import typing
-from abc import ABC
 import datetime
 from functools import cmp_to_key
 from itertools import chain
@@ -27,6 +25,7 @@ from decouple import config
 from jira import JIRA, JIRAError
 from natsort import natsorted, ns
 
+from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.auth import fetch_credentials
 
@@ -202,69 +201,6 @@ def determine_links(jira_link_types, input_links):
             logging.warning(f"Failed to find links {missing_links} in your configuration in Jira")
         valid_links = unique_input_links - missing_links
     return valid_links
-
-
-class JugglerTaskProperty(ABC):
-    """Class for a property of a Task Juggler"""
-
-    DEFAULT_NAME = 'property name'
-    DEFAULT_VALUE = 'not initialized'
-    PREFIX = ''
-    SUFFIX = ''
-    TEMPLATE = TAB + '{prop} {value}\n'
-    VALUE_TEMPLATE = '{prefix}{value}{suffix}'
-
-    def __init__(self, jira_issue=None):
-        """Initializes the task juggler property
-
-        Args:
-            jira_issue (jira.resources.Issue): The Jira issue to load from
-            value (object): Value of the property
-        """
-        self.name = self.DEFAULT_NAME
-        self.value = copy.copy(self.DEFAULT_VALUE)
-
-        if jira_issue:
-            self.load_from_jira_issue(jira_issue)
-
-    @property
-    def is_empty(self):
-        """bool: True if the property contains an empty or uninitialized value"""
-        return not self.value or self.value == self.DEFAULT_VALUE
-
-    def clear(self):
-        """Sets the name and value to the default"""
-        self.name = self.DEFAULT_NAME
-        self.value = self.DEFAULT_VALUE
-
-    def load_from_jira_issue(self, jira_issue):
-        """Loads the object with data from a Jira issue
-
-        Args:
-            jira_issue (jira.resources.Issue): The Jira issue to load from
-        """
-
-    def validate(self, task, tasks):
-        """Validates (and corrects) the current task property
-
-        Args:
-            task (JugglerTask): Task to which the property belongs
-            tasks (list): List of JugglerTask instances to which the current task belongs. Will be used to
-                verify relations to other tasks.
-        """
-
-    def __str__(self):
-        """Converts task property object to the task juggler syntax
-
-        Returns:
-            str: String representation of the task property in juggler syntax
-        """
-        if self.value is not None:
-            return self.TEMPLATE.format(prop=self.name,
-                                        value=self.VALUE_TEMPLATE.format(prefix=self.PREFIX,
-                                                                         value=self.value,
-                                                                         suffix=self.SUFFIX))
-        return ''
 
 
 class JugglerTaskAllocate(JugglerTaskProperty):
