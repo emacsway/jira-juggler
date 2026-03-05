@@ -12,6 +12,7 @@ from collections import namedtuple
 import unittest
 
 import mlx.jira_juggler.tasks.properties.constants
+import mlx.jira_juggler.tasks.properties.effort
 
 try:
     from unittest.mock import MagicMock, patch, call
@@ -64,7 +65,7 @@ ISSUE_LINK_TYPES = [
 
 class JiraJuggler(dut.JiraJuggler):
     def do_get_pert_estimate(self, task: dut.JugglerTask):
-        return dut.EmptyPertEstimate()
+        return mlx.jira_juggler.tasks.properties.effort.EmptyPertEstimate()
 
 
 dut.JiraJuggler = JiraJuggler
@@ -284,7 +285,7 @@ class TestJiraJuggler(unittest.TestCase):
         self.assertEqual(1, len(issues))
         self.assertEqual(self.KEY1, issues[0].key)
         self.assertEqual(self.SUMMARY1, issues[0].summary)
-        self.assertEqual(dut.JugglerTaskEffort.DEFAULT_VALUE, issues[0].properties['effort'].value)
+        self.assertEqual(mlx.jira_juggler.tasks.properties.effort.JugglerTaskEffort.DEFAULT_VALUE, issues[0].properties['effort'].value)
 
     @patch('mlx.jira_juggler.jira_juggler.JIRA', autospec=True)
     def test_estimate_too_low(self, jira_mock):
@@ -304,7 +305,7 @@ class TestJiraJuggler(unittest.TestCase):
         self.assertEqual(1, len(issues))
         self.assertEqual(self.KEY1, issues[0].key)
         self.assertEqual(self.SUMMARY1, issues[0].summary)
-        self.assertEqual(dut.JugglerTaskEffort.MINIMAL_VALUE, issues[0].properties['effort'].value)
+        self.assertEqual(mlx.jira_juggler.tasks.properties.effort.JugglerTaskEffort.MINIMAL_VALUE, issues[0].properties['effort'].value)
 
     @patch('mlx.jira_juggler.jira_juggler.JIRA', autospec=True)
     def test_broken_depends(self, jira_mock):
