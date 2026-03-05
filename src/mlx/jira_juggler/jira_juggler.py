@@ -28,6 +28,7 @@ from mlx.jira_juggler.tasks.properties.constants import TODO_STATUSES, PROGRESS_
 from mlx.jira_juggler.tasks.properties.depends import JugglerTaskDepends
 from mlx.jira_juggler.tasks.properties.effort import EmptyPertEstimate, PertEstimate, CompositePertEstimate, \
     JugglerTaskEffort
+from mlx.jira_juggler.tasks.properties.fact_depends import JugglerTaskFactDepends
 from mlx.jira_juggler.tasks.properties.priority import JugglerTaskPriority
 from mlx.jira_juggler.tasks.properties.registry import Registry
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
@@ -164,10 +165,6 @@ class JugglerTaskFlags(JugglerTaskProperty):
             return self.TEMPLATE.format(prop=self.name,
                                         value=valstr)
         return ''
-
-
-class JugglerTaskFactDepends(JugglerTaskDepends):
-    DEFAULT_NAME = 'fact:depends'
 
 
 class JugglerTaskTime(JugglerTaskProperty):
