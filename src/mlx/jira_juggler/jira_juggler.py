@@ -21,10 +21,8 @@ from jira import JIRA, JIRAError
 from natsort import natsorted, ns
 
 from mlx.jira_juggler.tasks.properties.allocate import JugglerTaskAllocate
-from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
 from mlx.jira_juggler.tasks.properties.complete import JugglerTaskComplete
-from mlx.jira_juggler.tasks.properties.constants import TODO_STATUSES, PROGRESS_STATUSES, DEVELOPED_STATUSES, \
-    RESOLVED_STATUSES, PENDING_STATUSES, DONE_STATUSES, TAB
+from mlx.jira_juggler.tasks.properties.constants import RESOLVED_STATUSES, PENDING_STATUSES, DONE_STATUSES, TAB
 from mlx.jira_juggler.tasks.properties.depends import JugglerTaskDepends
 from mlx.jira_juggler.tasks.properties.effort import EmptyPertEstimate, PertEstimate, CompositePertEstimate, \
     JugglerTaskEffort
@@ -32,6 +30,7 @@ from mlx.jira_juggler.tasks.properties.fact_depends import JugglerTaskFactDepend
 from mlx.jira_juggler.tasks.properties.flags import JugglerTaskFlags
 from mlx.jira_juggler.tasks.properties.priority import JugglerTaskPriority
 from mlx.jira_juggler.tasks.properties.registry import Registry
+from mlx.jira_juggler.tasks.properties.time import JugglerTaskTime
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.auth import fetch_credentials
 from mlx.jira_juggler.utils.identifier import to_identifier
@@ -54,20 +53,6 @@ def set_logging_level(loglevel):
     if not isinstance(numeric_level, int):
         raise ValueError('Invalid log level: %s' % loglevel)
     logging.basicConfig(level=numeric_level)
-
-
-def to_juggler_date(date):
-    """Converts given datetime.datetime object to a string that can be interpreted by TaskJuggler
-
-    The resolution is 60 minutes.
-
-    Args:
-        date (datetime.datetime): Datetime object
-
-    Returns:
-        str: String representing the date and time in TaskJuggler's format
-    """
-    return date.strftime('%Y-%m-%d-%H:00-%z').rstrip('-')
 
 
 def calculate_weekends(date, workdays_passed, weeklymax):
@@ -121,79 +106,6 @@ def determine_links(jira_link_types, input_links):
             logging.warning(f"Failed to find links {missing_links} in your configuration in Jira")
         valid_links = unique_input_links - missing_links
     return valid_links
-
-
-class JugglerTaskTime(JugglerTaskProperty):
-    """Class for setting the start/end time of a juggler task"""
-
-    DEFAULT_VALUE = ''
-    PREFIX = ''
-
-    def load_from_jira_issue(self, jira_issue):
-        start = self.do_get_start_date(jira_issue)
-        fact_start = self.do_determine_fact_start_date(jira_issue)
-        fact_end = self.do_determine_fact_end_date(jira_issue)
-        logging.debug("""Date: %s %r %r""", jira_issue.key, start, fact_start, fact_end)
-        if fact_end:
-            if jira_issue.fields.status.name.lower() not in TODO_STATUSES:
-                self.name, self.value = 'fact:end', fact_end
-        elif fact_start:
-            if jira_issue.fields.status.name.lower() not in TODO_STATUSES:
-                self.name, self.value = 'fact:start', fact_start
-        elif start:
-            self.name, self.value = 'start', start
-        logging.debug("""Set date: "%s", "%r", "%r""""", jira_issue.key, self.name, self.value)
-
-    def do_get_start_date(self, issue):
-        dt = getattr(issue.fields, 'customfield_10014', None)
-        if dt:
-            dt = datetime.datetime.strptime(dt, "%Y-%m-%d").date()
-            return dt
-        return None
-
-    def do_determine_fact_start_date(self, issue):
-        dt = None
-        for change in sorted(issue.changelog.histories, key=attrgetter('created'), reverse=True):
-            for item in change.items:
-                if item.field.lower() == 'status':
-                    status = item.toString.lower()
-                    if status in PROGRESS_STATUSES:
-                        return parser.isoparse(change.created)
-                    elif status in DEVELOPED_STATUSES and dt is None:
-                        dt = parser.isoparse(change.created)
-        return dt
-
-    def do_determine_fact_end_date(self, issue):
-        dt = None
-        for change in sorted(issue.changelog.histories, key=attrgetter('created'), reverse=True):
-            for item in change.items:
-                if item.field.lower() == 'status':
-                    status = item.toString.lower()
-                    if status in RESOLVED_STATUSES:
-                        return parser.isoparse(change.created)
-                    elif status in DONE_STATUSES + PENDING_STATUSES and dt is None:
-                        dt = parser.isoparse(change.created)
-        return dt
-
-    def validate(self, *_):
-        """Validates the current task property"""
-        if not self.is_empty:
-            valid_names = ('start', 'fact:start', 'end', 'fact:end',)
-            if self.name not in valid_names:
-                raise ValueError(f'The name of {self.__class__.__name__} is invalid; expected a value in {valid_names}')
-
-    def __str__(self):
-        """Converts task property object to the task juggler syntax
-
-        Returns:
-            str: String representation of the task property in juggler syntax
-        """
-        if self.value:
-            return self.TEMPLATE.format(
-                prop=self.name,
-                value=to_juggler_date(self.value)
-            )
-        return ''
 
 
 class JugglerTask:
