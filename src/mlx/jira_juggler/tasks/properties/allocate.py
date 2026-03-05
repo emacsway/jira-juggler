@@ -15,8 +15,8 @@ class JugglerTaskAllocate(JugglerTaskProperty):
     DEFAULT_VALUE = '"not assigned"'
 
     def __init__(self, to_username, jira_issue: jira.Issue | None = None):
-        super().__init__(jira_issue)
         self._to_username = to_username
+        super().__init__(jira_issue)
 
     def load_from_jira_issue(self, jira_issue: jira.Issue):
         """Loads the object with data from a Jira issue.

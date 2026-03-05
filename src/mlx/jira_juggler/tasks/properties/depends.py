@@ -18,8 +18,8 @@ class JugglerTaskDepends(JugglerTaskProperty):
     registry: Registry
 
     def __init__(self, registry: Registry, jira_issue: jira.Issue | None = None):
-        super().__init__(jira_issue)
         self.registry = registry
+        super().__init__(jira_issue)
 
     def append_value(self, value):
         """Appends value for task juggler property
