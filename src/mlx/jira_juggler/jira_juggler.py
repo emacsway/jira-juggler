@@ -25,11 +25,14 @@ from decouple import config
 from jira import JIRA, JIRAError
 from natsort import natsorted, ns
 
+from mlx.jira_juggler.tasks.properties.allocate import JugglerTaskAllocate
 from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
 from mlx.jira_juggler.tasks.properties.constants import TODO_STATUSES, PROGRESS_STATUSES, DEVELOPED_STATUSES, \
     RESOLVED_STATUSES, PENDING_STATUSES, DONE_STATUSES, TAB
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.auth import fetch_credentials
+from mlx.jira_juggler.utils import jirahandle
+
 
 DEFAULT_LOGLEVEL = 'warning'
 DEFAULT_JIRA_URL = 'https://melexis.atlassian.net'
@@ -100,53 +103,6 @@ def calculate_weekends(date, workdays_passed, weeklymax):
     return weekend_count
 
 
-def to_username(value):
-    """Converts the given value to a username (user ID), if needed, while caching the result.
-
-    Args:
-        value (str/jira.User): String (account ID or user ID) or User instance
-
-    Returns:
-        str: The corresponding username
-    """
-    user_id = value.accountId if hasattr(value, 'accountId') else str(value)
-    if user_id in id_to_username_mapping:
-        return id_to_username_mapping[user_id]
-
-    if not isinstance(value, str):
-        id_to_username_mapping[user_id] = determine_username(value)
-    elif len(value) >= 24:  # accountId
-        user = jirahandle.user(user_id)
-        id_to_username_mapping[user_id] = determine_username(user)
-    return id_to_username_mapping.get(user_id, value)
-
-
-def determine_username(user: jira.User):
-    """Determines the username (user ID) for the given User.
-
-    Args:
-        user (jira.User): User instance
-
-    Returns
-        str: Corresponding username
-
-    Raises:
-        Exception: Failed to determine username
-    """
-    if getattr(user, 'emailAddress', ''):
-        username = user.emailAddress.split('@')[0]
-    elif getattr(user, 'name', ''):  # compatibility with Jira Server
-        username = user.name
-    elif getattr(user, 'displayName', ''):
-        full_name = user.displayName
-        username = f'"{full_name}"'
-        logging.error(f"Failed to fetch email address of {full_name!r}: they restricted its visibility; "
-                      f"using identifier {username!r} as fallback value.")
-    else:
-        raise Exception(f"Failed to determine username of {user}")
-    return username
-
-
 def determine_default_links(link_types_per_name):
     default_links = []
     for link_types in ({'Blocker': 'inward', 'Blocks': 'inward'}, {'Dependency': 'outward', 'Dependent': 'outward'}):
@@ -174,50 +130,6 @@ def determine_links(jira_link_types, input_links):
             logging.warning(f"Failed to find links {missing_links} in your configuration in Jira")
         valid_links = unique_input_links - missing_links
     return valid_links
-
-
-class JugglerTaskAllocate(JugglerTaskProperty):
-    """Class for the allocation (assignee) of a juggler task"""
-
-    DEFAULT_NAME = 'allocate'
-    DEFAULT_VALUE = '"not assigned"'
-
-    def load_from_jira_issue(self, jira_issue: jira.Issue):
-        """Loads the object with data from a Jira issue.
-
-        The last assignee in the Analyzed state of the Jira issue is prioritized over the current assignee,
-        which is the fallback value.
-
-        Args:
-            jira_issue (jira.resources.Issue): The Jira issue to load from
-        """
-        if jira_issue.fields.status.name.lower() in DONE_STATUSES + PENDING_STATUSES + RESOLVED_STATUSES:
-            before_resolved = False
-            for change in sorted(jira_issue.changelog.histories, key=attrgetter('created'), reverse=True):
-                for item in change.items:
-                    if item.field.lower() == 'assignee':
-                        if not before_resolved:
-                            self.value = getattr(item, 'from', None)
-                            if self.value:
-                                self.value = to_username(self.value)
-                        else:
-                            self.value = to_username(item.to)
-                            return  # got last assignee before transition to Approved/Resolved status
-                    elif item.field.lower() == 'status' and item.toString.lower() in RESOLVED_STATUSES:
-                        before_resolved = True
-                        # if self.value and self.value != self.DEFAULT_VALUE:
-                        #     return  # assignee was changed after transition to Closed/Resolved status
-
-        if self.is_empty:
-            if getattr(jira_issue.fields, 'assignee', None):
-                self.value = to_username(jira_issue.fields.assignee)
-            else:
-                self.value = self.DEFAULT_VALUE
-
-    def __str__(self):
-        result = super().__str__().rstrip("\n")
-        result += """ {\n%(tab)s%(tab)smandatory\n%(tab)s}\n""" % {'tab': TAB}
-        return result
 
 
 class JugglerTaskPriority(JugglerTaskProperty):
@@ -1155,15 +1067,14 @@ class JiraJuggler:
         id_to_username_mapping = {}
         logging.info('Jira endpoint: %s', endpoint)
 
-        global jirahandle
-        jirahandle = JIRA(endpoint, basic_auth=(user, token), options={'rest_api_version': 3})
+        setattr(jirahandle, 'jira_instance', JIRA(endpoint, basic_auth=(user, token), options={'rest_api_version': 3}))
         if 'ORDER BY' not in query.upper():
             query = "%s ORDER BY priority DESC, created ASC" % query
         logging.info('Query: %s', query)
         self.query = query
         self.kids_query = kids_query
 
-        all_jira_link_types = jirahandle.issue_link_types()
+        all_jira_link_types = jirahandle.jira_instance.issue_link_types()
         JugglerTaskDepends.links = determine_links(all_jira_link_types, links)
 
     @classmethod
@@ -1203,7 +1114,7 @@ class JiraJuggler:
         result = []
         while True:
             try:
-                response = jirahandle.enhanced_search_issues(
+                response = jirahandle.jira_instance.enhanced_search_issues(
                     query,
                     maxResults=JIRA_PAGE_SIZE,
                     expand='changelog',
@@ -1279,7 +1190,7 @@ class JiraJuggler:
 
     def do_get_pert_estimate(self, issue):
         try:
-            pert_response = jirahandle.issue_property(issue.key, 'pert-estimation')
+            pert_response = jirahandle.jira_instance.issue_property(issue.key, 'pert-estimation')
         except JIRAError as e:
             if e.status_code == 404:
                 return EmptyPertEstimate()
