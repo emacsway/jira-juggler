@@ -21,6 +21,7 @@ from itertools import chain
 from operator import attrgetter
 from pathlib import Path
 
+import jira
 from dateutil import parser, tz
 from decouple import config
 from jira import JIRA, JIRAError
@@ -148,7 +149,7 @@ def to_username(value):
     return id_to_username_mapping.get(user_id, value)
 
 
-def determine_username(user):
+def determine_username(user: jira.User):
     """Determines the username (user ID) for the given User.
 
     Args:
