@@ -97,3 +97,6 @@ pip-selfcheck.json
 
 # Offline version file
 src/mlx/jira_juggler/_version.py
+
+.idea
+
