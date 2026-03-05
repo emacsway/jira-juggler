@@ -2,7 +2,6 @@ from _operator import attrgetter
 
 import jira
 
-from mlx.jira_juggler.utils.user import to_username
 from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
 from mlx.jira_juggler.tasks.properties.constants import DONE_STATUSES, PENDING_STATUSES, RESOLVED_STATUSES, TAB
 
