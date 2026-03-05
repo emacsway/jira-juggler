@@ -29,6 +29,7 @@ from mlx.jira_juggler.tasks.properties.depends import JugglerTaskDepends
 from mlx.jira_juggler.tasks.properties.effort import EmptyPertEstimate, PertEstimate, CompositePertEstimate, \
     JugglerTaskEffort
 from mlx.jira_juggler.tasks.properties.fact_depends import JugglerTaskFactDepends
+from mlx.jira_juggler.tasks.properties.flags import JugglerTaskFlags
 from mlx.jira_juggler.tasks.properties.priority import JugglerTaskPriority
 from mlx.jira_juggler.tasks.properties.registry import Registry
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
@@ -120,51 +121,6 @@ def determine_links(jira_link_types, input_links):
             logging.warning(f"Failed to find links {missing_links} in your configuration in Jira")
         valid_links = unique_input_links - missing_links
     return valid_links
-
-
-class JugglerTaskFlags(JugglerTaskProperty):
-    """Class for linking of a juggler task"""
-
-    DEFAULT_NAME = 'flags'
-    DEFAULT_VALUE = []
-
-    def append_value(self, value):
-        """Appends value for task juggler property
-
-        Args:
-            value (object): Value to append to the property
-        """
-        if value not in self.value:
-            self.value.append(value)
-
-    def load_from_jira_issue(self, jira_issue):
-        """Loads the object with data from a Jira issue
-
-        Args:
-            jira_issue (jira.resources.Issue): The Jira issue to load from
-        """
-        pass
-
-    def validate(self, task, tasks):
-        pass
-
-    def __str__(self):
-        """Converts task property object to the task juggler syntax
-
-        Returns:
-            str: String representation of the task property in juggler syntax
-        """
-        if self.value:
-            valstr = ''
-            for val in self.value:
-                if valstr:
-                    valstr += ', '
-                valstr += self.VALUE_TEMPLATE.format(prefix=self.PREFIX,
-                                                     value=val,
-                                                     suffix=self.SUFFIX)
-            return self.TEMPLATE.format(prop=self.name,
-                                        value=valstr)
-        return ''
 
 
 class JugglerTaskTime(JugglerTaskProperty):
