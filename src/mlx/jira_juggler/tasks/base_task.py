@@ -193,12 +193,19 @@ task {id} "{description}" {{
     def shift_unstarted_tasks_to_milestone(self, extras, milestone):
         sprint = self.get_sprint(extras)
         if sprint:
+            if self.time_is_empty():
+                self.properties['fact:depends'].append_value(sprint)
+            elif self.children:
+                for child in self.children:
+                    child.shift_unstarted_tasks_to_milestone(extras, sprint)
+            """
             self.properties['fact:depends'].append_value(sprint)
             if not self.time_is_empty() and self.in_progress():
                 for child in self.children:
                     if child.time_is_empty():
                         child.shift_unstarted_tasks_to_milestone(extras, milestone)
                         # child.shift_unstarted_tasks_to_milestone(extras, sprint)
+            """
         elif self.time_is_empty():
             self.properties['fact:depends'].append_value(milestone)
         elif self.children:
