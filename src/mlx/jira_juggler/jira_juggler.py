@@ -30,7 +30,7 @@ from mlx.jira_juggler.tasks.properties.registry import Registry
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.auth import fetch_credentials
 from mlx.jira_juggler.utils.identifier import to_identifier
-from mlx.jira_juggler.utils.sprint import make_sprint_accessor
+from mlx.jira_juggler.utils.sprint import SprintAccessor
 from mlx.jira_juggler.utils.user import ToUsername
 
 DEFAULT_LOGLEVEL = 'warning'
@@ -269,7 +269,7 @@ class JiraJuggler:
         JugglerTask.add_working_days = staticmethod(AddWorkingDays(kwargs.get('weeklymax')))
         if kwargs.get('sprint_field_name'):
             kwargs['sprint_field_name'], sprint_re_pattern, sprint_re_repl = kwargs['sprint_field_name'].split('|')
-            JugglerTask.sprint_accessor = staticmethod(make_sprint_accessor(
+            JugglerTask.sprint_accessor = staticmethod(SprintAccessor(
                 kwargs['sprint_field_name'],
                 sprint_re_pattern,
                 sprint_re_repl
