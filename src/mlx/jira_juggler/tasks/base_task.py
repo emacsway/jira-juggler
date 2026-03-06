@@ -16,6 +16,7 @@ from mlx.jira_juggler.tasks.properties.registry import Registry
 from mlx.jira_juggler.tasks.properties.time import JugglerTaskTime
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.identifier import to_identifier
+from mlx.jira_juggler.utils.sprint import Sprint
 
 
 __all__ = ('JugglerTask',)
@@ -34,6 +35,7 @@ class JugglerTask:
         FEATURE = 'New Feature'
 
     add_working_days: AddWorkingDays
+    sprint: Sprint
     focus_factor = 0.7
     children: list['JugglerTask']
     DEFAULT_KEY = 'NOT_INITIALIZED'

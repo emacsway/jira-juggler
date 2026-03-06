@@ -159,8 +159,8 @@ class JiraJuggler:
         """
         tasks = [JugglerTask.factory(self._registry, self._to_username, issue) for issue in self._load_issues(self.query)]
         self.validate_tasks(tasks)
-        # if sprint_field_name:
-        #     self.sort_tasks_on_sprint(tasks, sprint_field_name)
+        if sprint_field_name:
+            self.sort_tasks_on_sprint(tasks)
         tasks.sort(key=cmp_to_key(self.compare_status))
         if depend_on_preceding:
             self.link_to_preceding_task(tasks, **kwargs)
@@ -385,79 +385,23 @@ supplement task %(id)s {
                 unresolved_tasks.setdefault(assignee, []).append(task)
             logging.debug('After %s %s %s', task.key, time_property.name, time_property.value)
 
-    def sort_tasks_on_sprint(self, tasks, sprint_field_name):
+    def sort_tasks_on_sprint(self, tasks):
         """Sorts given list of tasks based on the values of the field with the given name.
 
         JIRA issues that are not assigned to a sprint will be ordered last.
 
         Args:
             tasks (list): List of JugglerTask instances to sort in place
-            sprint_field_name (str): Name of the field that contains information about sprints
         """
-        priorities = {
-            "ACTIVE": 3,
-            "FUTURE": 2,
-            "CLOSED": 1,
-        }
         for task in tasks:
-            task.sprint_name = ""
-            task.sprint_priority = 0
-            task.sprint_start_date = None
-            if not task.issue:
-                continue
-            values = getattr(task.issue.fields, sprint_field_name, None)
-            if values is not None:
-                if isinstance(values, str):
-                    values = [values]
-                for sprint_info in values:
-                    state = ""
-                    if isinstance(sprint_info, (str, bytes)):  # Jira Server
-                        state_match = re.search("state=({})".format("|".join(priorities)), sprint_info)
-                        if state_match:
-                            state = state_match.group(1)
-                            prio = priorities[state]
-                            if prio > task.sprint_priority:
-                                task.sprint_name = re.search("name=(.+?),", sprint_info).group(1)
-                                task.sprint_priority = prio
-                                task.sprint_start_date = self.extract_start_date(sprint_info, task.issue.key)
-                    else:  # Jira Cloud
-                        state = sprint_info.state.upper()
-                        if state in priorities:
-                            prio = priorities[state]
-                            if prio > task.sprint_priority:
-                                task.sprint_name = sprint_info.name
-                                task.sprint_priority = prio
-                                if hasattr(sprint_info, 'startDate'):
-                                    task.sprint_start_date = parser.parse(sprint_info.startDate)
-                if task.children:
-                    self.sort_tasks_on_sprint(task.children, sprint_field_name)
+            if task.children:
+                self.sort_tasks_on_sprint(task.children)
 
         logging.debug("Sorting tasks based on sprint information...")
         tasks.sort(key=cmp_to_key(self.compare_sprint_priority))
 
     @staticmethod
-    def extract_start_date(sprint_info, issue_key):
-        """Extracts the start date from the given info string.
-
-        Args:
-            sprint_info (str): Raw information about a sprint, as returned by the JIRA API
-            issue_key (str): Name of the JIRA issue
-
-        Returns:
-            datetime.datetime/None: Start date as a datetime.datetime object or None if the sprint does not have a start date
-        """
-        start_date_match = re.search("startDate=(.+?),", sprint_info)
-        if start_date_match:
-            start_date_str = start_date_match.group(1)
-            if start_date_str != '<null>':
-                try:
-                    return parser.parse(start_date_match.group(1))
-                except parser.ParserError as err:
-                    logging.debug("Failed to parse start date of sprint of issue %s: %s", issue_key, err)
-                    return None
-
-    @staticmethod
-    def compare_sprint_priority(a, b):
+    def compare_sprint_priority(a: JugglerTask, b: JugglerTask):
         """Compares the priority of two tasks based on the sprint information
 
         The sprint_priority attribute is taken into account first, followed by the sprint_start_date and, lastly, the
@@ -470,24 +414,24 @@ supplement task %(id)s {
         Returns:
             int: 0 for equal priority; -1 to prioritize a over b; 1 otherwise
         """
-        if a.sprint_priority > b.sprint_priority:
+        if a.sprint.priority > b.sprint.priority:
             return -1
-        if a.sprint_priority < b.sprint_priority:
+        if a.sprint.priority < b.sprint.priority:
             return 1
-        if a.sprint_priority == 0 or a.sprint_name == b.sprint_name:
+        if a.sprint.priority == 0 or a.sprint.name == b.sprint.name:
             return 0  # no/same sprint associated with both issues
-        if type(a.sprint_start_date) != type(b.sprint_start_date):  # noqa
-            return -1 if b.sprint_start_date is None else 1
-        if a.sprint_start_date == b.sprint_start_date:
+        if type(a.sprint.start_date) != type(b.sprint.start_date):  # noqa
+            return -1 if b.sprint.start_date is None else 1
+        if a.sprint.start_date == b.sprint.start_date:
             # a sprint with backlog in its name has lower priority
-            if "backlog" not in a.sprint_name.lower() and "backlog" in b.sprint_name.lower():
+            if "backlog" not in a.sprint.name.lower() and "backlog" in b.sprint.name.lower():
                 return -1
-            if "backlog" in a.sprint_name.lower() and "backlog" not in b.sprint_name.lower():
+            if "backlog" in a.sprint.name.lower() and "backlog" not in b.sprint.name.lower():
                 return 1
-            if natsorted([a.sprint_name, b.sprint_name], alg=ns.IGNORECASE)[0] == a.sprint_name:
+            if natsorted([a.sprint.name, b.sprint.name], alg=ns.IGNORECASE)[0] == a.sprint.name:
                 return -1
             return 1
-        if a.sprint_start_date < b.sprint_start_date:
+        if a.sprint.start_date < b.sprint.start_date:
             return -1
         return 1
 

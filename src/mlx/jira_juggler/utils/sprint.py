@@ -9,10 +9,10 @@ __all__ = ('Sprint', 'SprintAccessor',)
 
 
 class Sprint:
-    def __init__(self, name, priority, start):
+    def __init__(self, name, priority, start_date):
         self.name = name
         self.priority = priority
-        self.start = start
+        self.start_date = start_date
 
 
 class SprintAccessor:
