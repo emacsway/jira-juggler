@@ -268,7 +268,7 @@ class JiraJuggler:
         """
         JugglerTask.add_working_days = staticmethod(AddWorkingDays(kwargs.get('weeklymax')))
         if kwargs.get('sprint_field_name'):
-            kwargs['sprint_field_name'], sprint_re_pattern, sprint_re_repl = kwargs['sprint_field_name'].split('|')
+            kwargs['sprint_field_name'], sprint_re_pattern, sprint_re_repl = kwargs['sprint_field_name']
             JugglerTask.sprint_accessor = staticmethod(SprintAccessor(
                 kwargs['sprint_field_name'],
                 sprint_re_pattern,
@@ -528,7 +528,7 @@ def main():
                         "are considered.  Specify an empty value to ignore Jira issue links altogether.")
     argpar.add_argument('-D', '--depend-on-preceding', action='store_true',
                         help='Flag to let tasks depend on the preceding task with the same assignee')
-    argpar.add_argument('-s', '--sort-on-sprint', dest='sprint_field_name', default='',
+    argpar.add_argument('-s', '--sort-on-sprint', dest='sprint_field_name', default='', nargs=3,
                         help='Sort unresolved tasks by using field name that stores sprint(s), e.g. customfield_10851, '
                              'in addition to the original order')
     argpar.add_argument('-w', '--weeklymax', default=5, type=int,
