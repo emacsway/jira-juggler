@@ -109,6 +109,8 @@ task {id} "{description}" {{
         self.properties['flags'] = JugglerTaskFlags(jira_issue)
         self.children = [JugglerTask.factory(self.registry, self.to_username, child, self) for child in jira_issue.children]
         self.registry[to_identifier(self.key)] = self
+        if hasattr(self, 'sprint_accessor'):
+            self.sprint = self.sprint_accessor(jira_issue)
 
     def validate(self, tasks, property_identifier):
         """Validates (and corrects) the current task
@@ -196,6 +198,7 @@ task {id} "{description}" {{
                 for child in self.children:
                     if child.time_is_empty():
                         child.shift_unstarted_tasks_to_milestone(extras, milestone)
+                        # child.shift_unstarted_tasks_to_milestone(extras, sprint)
         elif self.time_is_empty():
             self.properties['fact:depends'].append_value(milestone)
         elif self.children:

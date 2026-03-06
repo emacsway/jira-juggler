@@ -536,12 +536,13 @@ def make_sprint_accessor(sprint_field_name, sprint_re_pattern, sprint_re_repl):
                         prio = priorities[state]
                         if prio > sprint.priority:
                             name = re.search("name=(.+?),", sprint_info).group(1)
-                            name = pattern.sub(sprint_re_repl, name)
-                            sprint = Sprint(
-                                name,
-                                prio,
-                                extract_start_date(sprint_info, jira_issue.key)
-                            )
+                            if pattern.fullmatch(name):
+                                name = pattern.sub(sprint_re_repl, name)
+                                sprint = Sprint(
+                                    name,
+                                    prio,
+                                    extract_start_date(sprint_info, jira_issue.key)
+                                )
 
                 else:  # Jira Cloud
                     state = sprint_info.state.upper()
@@ -549,12 +550,13 @@ def make_sprint_accessor(sprint_field_name, sprint_re_pattern, sprint_re_repl):
                         prio = priorities[state]
                         if prio > sprint.priority:
                             name = sprint_info.name
-                            name = pattern.sub(sprint_re_repl, name)
-                            sprint = Sprint(
-                                name,
-                                prio,
-                                parser.parse(sprint_info.startDate) if hasattr(sprint_info, 'startDate') else None
-                            )
+                            if pattern.fullmatch(name):
+                                name = pattern.sub(sprint_re_repl, name)
+                                sprint = Sprint(
+                                    name,
+                                    prio,
+                                    parser.parse(sprint_info.startDate) if hasattr(sprint_info, 'startDate') else None
+                                )
         return sprint
 
     return sprint_accessor
