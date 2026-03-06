@@ -25,8 +25,10 @@ class BacklogItem(JugglerTask):
                         )
 
         if not self.properties['time'].is_empty and self.properties['time'].name == 'fact:end' and not self.is_complete():
+            # Actually the PBI is not finished yet.
             self.properties['time'].clear()
         if not self.properties['time'].is_empty and self.properties['time'].name == 'fact:start' and self.todo():
+            # Actually the PBI is not started yet.
             self.properties['time'].clear()
 
     def shift_unstarted_tasks_to_milestone(self, extras, milestone):
