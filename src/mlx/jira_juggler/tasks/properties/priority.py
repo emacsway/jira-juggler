@@ -7,11 +7,12 @@ class JugglerTaskPriority(JugglerTaskProperty):
     """Class for the allocation (assignee) of a juggler task"""
 
     _PRIORITY_MAPPING = {
-        'lowest': 200,
-        'low': 350,
+        'lowest': 300,
+        'low': 400,
         'medium': 500,
-        'high': 650,
-        'highest': 800,
+        'high': 600,
+        'highest': 700,
+        'critical': 800,
     }
 
     DEFAULT_NAME = 'priority'
