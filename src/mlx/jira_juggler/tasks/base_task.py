@@ -276,15 +276,21 @@ task {id} "{description}" {{
             for child in self.children:
                 child.collect_todo_tasks(collector)
 
-    def bottom_up_deps(self) -> set['JugglerTask']:
+    def bottom_up_deps(self, visited: set | None = None) -> set['JugglerTask']:
+        if visited is None:
+            visited = set()
+        if self.key in visited:
+            return set()
+            # raise RuntimeError('Circular dependency has been detected: %r -> %s' % (visited, self.key))
+        visited.add(self.key)
         deps = set()  # TODO: Use OrderedSet?
         for dep in self.properties['depends'].value:
             if dep in self.properties['depends'].registry:
                 deps.add(self.properties['depends'].registry.get(dep))
         if self.parent:
-            deps = deps.union(self.parent.bottom_up_deps())
+            deps = deps.union(self.parent.bottom_up_deps(visited))
         for dep in deps:
-            deps = deps.union(dep.bottom_up_deps())
+            deps = deps.union(dep.bottom_up_deps(visited))
         return deps
 
     def time_is_empty(self) -> bool:
