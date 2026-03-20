@@ -29,11 +29,20 @@ class JugglerTaskFlags(JugglerTaskProperty):
         """
         if hasattr(jira_issue.fields, 'labels'):
             for label in jira_issue.fields.labels:
+                if not self._add_label(label):
+                    continue
                 identifier = re.sub(r'[^a-zA-Z0-9_]', '_', label)
                 if identifier and identifier[0].isdigit():
                     identifier = '_' + identifier
                 if identifier:
                     self.append_value(identifier)
+
+    def _add_label(self, label: str) -> bool:
+        if label == 'TaskJuggler':
+            return False
+        if label.startswith('Team'):
+            return False
+        return True
 
     def validate(self, task, tasks):
         pass
