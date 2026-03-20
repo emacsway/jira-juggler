@@ -1,3 +1,5 @@
+import re
+
 from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
 
 
@@ -25,7 +27,13 @@ class JugglerTaskFlags(JugglerTaskProperty):
         Args:
             jira_issue (jira.resources.Issue): The Jira issue to load from
         """
-        pass
+        if hasattr(jira_issue.fields, 'labels'):
+            for label in jira_issue.fields.labels:
+                identifier = re.sub(r'[^a-zA-Z0-9_]', '_', label)
+                if identifier and identifier[0].isdigit():
+                    identifier = '_' + identifier
+                if identifier:
+                    self.append_value(identifier)
 
     def validate(self, task, tasks):
         pass
