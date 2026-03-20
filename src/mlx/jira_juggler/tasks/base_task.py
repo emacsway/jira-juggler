@@ -26,6 +26,7 @@ class JugglerTask:
     """Class for a task for Task-Juggler"""
 
     class TYPE:
+        INITIATIVE = 'Initiative'
         EPIC = 'Epic'
         SPIKE = 'Spike'
         STORY = 'Story'
@@ -51,7 +52,9 @@ task {id} "{description}" {{
 
     @classmethod
     def factory(cls, registry, to_username, jira_issue, parent=None) -> 'JugglerTask':
-        if jira_issue.fields.issuetype.name == cls.TYPE.EPIC:
+        if jira_issue.fields.issuetype.name == cls.TYPE.INITIATIVE:
+            return Initiative(registry, to_username, jira_issue, parent)
+        elif jira_issue.fields.issuetype.name == cls.TYPE.EPIC:
             return Epic(registry, to_username, jira_issue, parent)
         elif jira_issue.fields.issuetype.name == cls.TYPE.SPIKE or '[spike]' in jira_issue.fields.summary.lower():
             return Spike(registry, to_username, jira_issue, parent)
@@ -377,3 +380,4 @@ from mlx.jira_juggler.tasks.spike import Spike
 from mlx.jira_juggler.tasks.defect import Defect
 from mlx.jira_juggler.tasks.pbi import BacklogItem
 from mlx.jira_juggler.tasks.epic import Epic
+from mlx.jira_juggler.tasks.initiative import Initiative
