@@ -45,8 +45,8 @@ class BacklogItem(JugglerTask):
             if self.children:
                 for child in self.children:
                     child.adjust_priority(extras)
-        elif not self.is_dor() and self.todo():
-            self.properties['priority'].value = 1
+        # elif not self.is_dor() and self.todo():
+        #     self.properties['priority'].value = 1
         elif self.children:
             for child in self.children:
                 child.adjust_priority(extras)
