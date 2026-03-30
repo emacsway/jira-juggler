@@ -104,15 +104,19 @@ task {id} "{description}" {{
         self.summary = (summary[:self.MAX_SUMMARY_LENGTH] + '...') if len(summary) > self.MAX_SUMMARY_LENGTH else summary
         if self.is_resolved:
             self.resolved_at_date = self.determine_resolved_at_date()
-        self.properties['allocate'] = JugglerTaskAllocate(self.to_username, jira_issue)
-        self.properties['effort'] = JugglerTaskEffort(jira_issue)
+
+        if len(jira_issue.children) == 0:
+            self.properties['allocate'] = JugglerTaskAllocate(self.to_username, jira_issue)
+            self.properties['effort'] = JugglerTaskEffort(jira_issue)
+            self.properties['complete'] = JugglerTaskComplete(jira_issue)
+
         self.properties['depends'] = JugglerTaskDepends(self.registry, jira_issue)
         self.properties['fact:depends'] = JugglerTaskFactDepends(self.registry)
         self.properties['time'] = JugglerTaskTime(jira_issue)
-        self.properties['complete'] = JugglerTaskComplete(jira_issue)
         self.properties['priority'] = JugglerTaskPriority(jira_issue)
         self.properties['flags'] = JugglerTaskFlags(jira_issue)
         self.children = [JugglerTask.factory(self.registry, self.to_username, child, self) for child in jira_issue.children]
+
         self.registry[to_identifier(self.key)] = self
         if hasattr(self, 'sprint_accessor'):
             self.sprint = self.sprint_accessor(jira_issue)
@@ -127,7 +131,8 @@ task {id} "{description}" {{
         """
         if self.key == self.DEFAULT_KEY:
             logging.error('Found a task which is not initialized')
-        self.properties[property_identifier].validate(self, tasks)
+        if property_identifier in self.properties:
+            self.properties[property_identifier].validate(self, tasks)
 
         for task in tasks:
             if task.children:
@@ -140,9 +145,7 @@ task {id} "{description}" {{
             str: String representation of the task in juggler syntax
         """
         props = list()
-        for k, v in self.properties.items():
-            if k in ('effort', 'allocate', 'complete',) and self.children:
-                continue
+        for v in self.properties.values():
             props.append(str(v))
 
         props = "".join(props)

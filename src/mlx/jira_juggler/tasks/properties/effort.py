@@ -15,7 +15,6 @@ __all__ = (
     'IPertEstimate',
     'EmptyPertEstimate',
     'PertEstimate',
-    'CompositePertEstimate',
     'JugglerTaskEffort',
 )
 
@@ -162,60 +161,6 @@ class PertEstimate:
         return self._limits
 
 
-class CompositePertEstimate(IPertEstimate):
-    _children: typing.Iterable[IPertEstimate]
-
-    def __init__(self, children: typing.Iterable[IPertEstimate]):
-        self._children = children
-
-    @property
-    def optimistic(self) -> float:
-        return functools.reduce(
-            operator.add,
-            map(operator.attrgetter('optimistic'), self._children),
-            0
-        )
-
-    @property
-    def nominal(self) -> float:
-        return functools.reduce(
-            operator.add,
-            map(operator.attrgetter('nominal'), self._children),
-            0
-        )
-
-    @property
-    def pessimistic(self) -> float:
-        return functools.reduce(
-            operator.add,
-            map(operator.attrgetter('pessimistic'), self._children),
-            0
-        )
-
-    @property
-    def expected_duration(self) -> float:
-        return functools.reduce(
-            operator.add,
-            map(operator.attrgetter('expected_duration'), self._children),
-            0
-        )
-
-    @property
-    def standard_deviation(self) -> float:
-        return math.sqrt(functools.reduce(
-            operator.add,
-            map(
-                functools.partial(pow, exp=2),
-                map(operator.attrgetter('expected_duration'), self._children)
-            ),
-            0
-        ))
-
-    @property
-    def limits(self) -> list[ILimit]:
-        return list()
-
-
 class JugglerTaskEffort(JugglerTaskProperty):
     """Class for the effort (estimate) of a juggler task"""
 
@@ -298,10 +243,9 @@ class JugglerTaskEffort(JugglerTaskProperty):
                 )
             )
 
-        if not isinstance(self.pert, CompositePertEstimate):
-            result += TAB + """${pert "%s" "%s" "%s"}\n""" % (
-                self.pert.optimistic or self.MINIMAL_VALUE,
-                self.pert.nominal or self.MINIMAL_VALUE,
-                self.pert.pessimistic or self.MINIMAL_VALUE
-            )
+        result += TAB + """${pert "%s" "%s" "%s"}\n""" % (
+            self.pert.optimistic or self.MINIMAL_VALUE,
+            self.pert.nominal or self.MINIMAL_VALUE,
+            self.pert.pessimistic or self.MINIMAL_VALUE
+        )
         return result

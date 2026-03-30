@@ -25,7 +25,6 @@ from mlx.jira_juggler.tasks.properties.effort import (
     WeeklyMax,
     EmptyPertEstimate,
     PertEstimate,
-    CompositePertEstimate,
     JugglerTaskEffort,
 )
 from mlx.jira_juggler.tasks.properties.registry import Registry
@@ -240,11 +239,7 @@ class JiraJuggler:
         )
 
     def _attach_pert_estimate(self, issue):
-        if len(issue.children) > 0:
-            issue.pert = CompositePertEstimate(
-                [i.pert for i in issue.children]
-            )
-        else:
+        if len(issue.children) == 0:
             issue.pert = self.do_get_pert_estimate(issue)
 
     def do_get_pert_estimate(self, issue):
