@@ -21,6 +21,8 @@ from natsort import natsorted, ns
 from mlx.jira_juggler.tasks.base_task import JugglerTask
 from mlx.jira_juggler.tasks.properties.depends import JugglerTaskDepends
 from mlx.jira_juggler.tasks.properties.effort import (
+    DailyMax,
+    WeeklyMax,
     EmptyPertEstimate,
     PertEstimate,
     CompositePertEstimate,
@@ -254,10 +256,16 @@ class JiraJuggler:
             else:
                 raise
         else:
+            limits = []
+            if hasattr(pert_response.value, 'dailymax'):
+                limits.append(DailyMax(pert_response.value.dailymax))
+            if hasattr(pert_response.value, 'weeklymax'):
+                limits.append(WeeklyMax(pert_response.value.weeklymax))
             return PertEstimate(
                 optimistic=pert_response.value.optimistic,
                 nominal=pert_response.value.nominal,
                 pessimistic=pert_response.value.pessimistic,
+                limits=limits,
             )
 
     def juggle(self, output=None, **kwargs):
