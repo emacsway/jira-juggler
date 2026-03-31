@@ -163,6 +163,7 @@ class PertEstimate:
 
 
 class CompositePertEstimate(IPertEstimate):
+    # It seems that it is used by JugglerTask.fix_time() and cann't be deleted.
     _children: typing.Iterable[IPertEstimate]
 
     def __init__(self, children: typing.Iterable[IPertEstimate]):
