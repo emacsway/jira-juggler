@@ -257,9 +257,9 @@ class JiraJuggler:
                 raise
         else:
             limits = []
-            if hasattr(pert_response.value, 'dailymax'):
+            if getattr(pert_response.value, 'dailymax', None):
                 limits.append(DailyMax(pert_response.value.dailymax))
-            if hasattr(pert_response.value, 'weeklymax'):
+            if getattr(pert_response.value, 'weeklymax', None):
                 limits.append(WeeklyMax(pert_response.value.weeklymax))
             return PertEstimate(
                 optimistic=pert_response.value.optimistic,
