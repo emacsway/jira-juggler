@@ -30,8 +30,11 @@ class JugglerTaskTime(JugglerTaskProperty):
         fact_start = self.do_determine_fact_start_date(jira_issue)
         fact_end = self.do_determine_fact_end_date(jira_issue)
         logging.debug("""Date: %s %r %r""", jira_issue.key, start, fact_start, fact_end)
+        if fact_end is not None and fact_start is not None and fact_start > fact_end:
+            # It's a reopened task
+            fact_end = None
         if fact_end:
-            if jira_issue.fields.status.name.lower() not in TODO_STATUSES:
+            if jira_issue.fields.status.name.lower() not in (TODO_STATUSES + PROGRESS_STATUSES):
                 self.name, self.value = 'fact:end', fact_end
         elif fact_start:
             if jira_issue.fields.status.name.lower() not in TODO_STATUSES:
