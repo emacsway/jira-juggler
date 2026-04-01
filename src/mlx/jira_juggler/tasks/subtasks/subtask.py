@@ -1,15 +1,11 @@
-from mlx.jira_juggler.tasks.base_task import JugglerTask
+from mlx.jira_juggler.tasks.subtasks.base_subtask import BaseSubtask
+from mlx.jira_juggler.tasks.properties.effort import PertEstimate
 
 __all__ = ('Subtask',)
 
 
-class Subtask(JugglerTask):
+class Subtask(BaseSubtask):
     def load_from_jira_issue(self, jira_issue):
         super().load_from_jira_issue(jira_issue)
-        # self._inherit_priority()
-        # self.properties['priority'].clear()
-        self.properties['priority'].set_relatively_on(self.parent.properties['priority'].value)
-
-    def adjust_priority(self, extras):
-        super().adjust_priority(extras)
-        self.properties['priority'].set_relatively_on(self.parent.properties['priority'].value)
+        if self.properties['effort'].is_empty:
+            self.properties['effort'].update(PertEstimate(0.2, 0.4, 0.7))
