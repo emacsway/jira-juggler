@@ -29,7 +29,7 @@ class JugglerTaskTime(JugglerTaskProperty):
         start = self.do_get_start_date(jira_issue)
         fact_start = self.do_determine_fact_start_date(jira_issue)
         fact_end = self.do_determine_fact_end_date(jira_issue)
-        logging.debug("""Date: %s %r %r""", jira_issue.key, start, fact_start, fact_end)
+        logging.debug("""Date: %s %r %r %r""", jira_issue.key, start, fact_start, fact_end)
         if fact_end is not None and fact_start is not None and fact_start > fact_end:
             # It's a reopened task
             fact_end = None
