@@ -42,6 +42,8 @@ class JugglerTaskFlags(JugglerTaskProperty):
             return False
         if label.startswith('Team'):
             return False
+        if label.startswith('Release'):
+            return False
         return True
 
     def validate(self, task, tasks):
