@@ -8,7 +8,7 @@ from mlx.jira_juggler.tasks.properties.allocate import JugglerTaskAllocate
 from mlx.jira_juggler.tasks.properties.complete import JugglerTaskComplete
 from mlx.jira_juggler.tasks.properties.constants import TAB, DONE_STATUSES, RESOLVED_STATUSES, PENDING_STATUSES
 from mlx.jira_juggler.tasks.properties.depends import JugglerTaskDepends
-from mlx.jira_juggler.tasks.properties.effort import JugglerTaskEffort
+from mlx.jira_juggler.tasks.properties.effort import CompositePertEstimate, JugglerTaskEffort
 from mlx.jira_juggler.tasks.properties.fact_depends import JugglerTaskFactDepends
 from mlx.jira_juggler.tasks.properties.flags import JugglerTaskFlags
 from mlx.jira_juggler.tasks.properties.priority import JugglerTaskPriority
@@ -113,6 +113,8 @@ task {id} "{description}" {{
         self.properties['priority'] = JugglerTaskPriority(jira_issue)
         self.properties['flags'] = JugglerTaskFlags(jira_issue)
         self.children = [JugglerTask.factory(self.registry, self.to_username, child, self) for child in jira_issue.children]
+        if len(self.children) > 0:
+            self.properties['effort'].update(CompositePertEstimate([child.properties['effort'].pert for child in self.children]))
         self.registry[to_identifier(self.key)] = self
         if hasattr(self, 'sprint_accessor'):
             self.sprint = self.sprint_accessor(jira_issue)
