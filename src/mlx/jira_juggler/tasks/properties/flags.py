@@ -1,5 +1,7 @@
 import re
 
+import jira
+
 from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
 
 
@@ -21,7 +23,7 @@ class JugglerTaskFlags(JugglerTaskProperty):
         if value not in self.value:
             self.value.append(value)
 
-    def load_from_jira_issue(self, jira_issue):
+    def load_from_jira_issue(self, jira_issue: jira.Issue):
         """Loads the object with data from a Jira issue
 
         Args:

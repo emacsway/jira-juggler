@@ -170,7 +170,7 @@ class JiraJuggler:
 
     def _load_issues(self, query):
         next_page_token = None
-        result = []
+        result: list[jira.Issue] = []
         while True:
             try:
                 response = self._jira_instance.enhanced_search_issues(
@@ -230,6 +230,10 @@ class JiraJuggler:
         for issue in result:
             self._attach_children(issue)
             self._attach_pert_estimate(issue)
+            if issue.key in self._extras:
+                flags = self._extras[issue.key].flags
+                for flag in flags:
+                    issue.fields.labels.append(flag)
 
         return result
 
@@ -274,6 +278,11 @@ class JiraJuggler:
         Args:
             list: A list of JugglerTask instances
         """
+        self._extras = {}
+        if kwargs.get('extras_filepath'):
+            self._extras = self._load_extras(kwargs['extras_filepath'])
+        extras = self._extras
+
         JugglerTask.add_working_days = staticmethod(AddWorkingDays(kwargs.get('weeklymax')))
         if kwargs.get('sprint_field_name'):
             kwargs['sprint_field_name'], sprint_re_pattern, sprint_re_repl = kwargs['sprint_field_name']
@@ -282,16 +291,12 @@ class JiraJuggler:
                 sprint_re_pattern,
                 sprint_re_repl
             ))
+
         juggler_tasks = self.load_issues_from_jira(**kwargs)
         if not juggler_tasks:
             return None
 
-        extras = {}
-        if kwargs.get('extras_filepath'):
-            extras = self._load_extras(kwargs['extras_filepath'])
-
         for task in juggler_tasks:
-            task.adjust_flags(extras)
             task.adjust_priority(extras)
 
         juggler_tasks.sort(key=lambda i: i.properties['priority'].value, reverse=True)

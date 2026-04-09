@@ -265,15 +265,6 @@ task {id} "{description}" {{
         else:
             return self.properties['complete'].value == 100
 
-    def adjust_flags(self, extras):
-        if self.key in extras:
-            flags = extras[self.key].flags
-            for flag in flags:
-                self.properties['flags'].append_value(flag)
-        if self.children:
-            for child in self.children:
-                child.adjust_flags(extras)
-
     def collect_todo_tasks(self, collector: Registry):
         if self.time_is_empty():
             collector[to_identifier(self.key)] = self
