@@ -227,16 +227,6 @@ task {id} "{description}" {{
             sprint = getattr(self, 'sprint').name
         return sprint
 
-    def adjust_priority(self, extras):
-        priority = None
-        if self.key in extras:
-            priority = extras[self.key].priority
-        if priority is not None:
-            self.properties['priority'].value = priority
-        if self.children:
-            for child in self.children:
-                child.adjust_priority(extras)
-
     def is_dor(self):
         if self.children:
             return any(child.is_dor() for child in self.children)  # all()?

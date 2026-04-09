@@ -234,6 +234,9 @@ class JiraJuggler:
                 flags = self._extras[issue.key].flags
                 for flag in flags:
                     issue.fields.labels.append(flag)
+                priority = self._extras[issue.key].priority
+                if priority is not None:
+                    issue.fields.priority.tj_value = priority
 
         return result
 
@@ -295,9 +298,6 @@ class JiraJuggler:
         juggler_tasks = self.load_issues_from_jira(**kwargs)
         if not juggler_tasks:
             return None
-
-        for task in juggler_tasks:
-            task.adjust_priority(extras)
 
         juggler_tasks.sort(key=lambda i: i.properties['priority'].value, reverse=True)
         for task in juggler_tasks:

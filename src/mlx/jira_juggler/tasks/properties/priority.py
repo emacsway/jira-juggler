@@ -1,3 +1,4 @@
+import jira
 from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
 
 __all__ = ('JugglerTaskPriority',)
@@ -33,9 +34,13 @@ class JugglerTaskPriority(JugglerTaskProperty):
             if relative_priority != 0:
                 self._value = parent_priority + relative_priority
 
-    def load_from_jira_issue(self, jira_issue):
+    def load_from_jira_issue(self, jira_issue: jira.Issue):
         if jira_issue.fields.priority:
-            self.value = self._PRIORITY_MAPPING[jira_issue.fields.priority.name.lower()]
+            tj_value = getattr(jira_issue.fields.priority, 'tj_value', None)
+            if tj_value is not None:
+                self.value = tj_value
+            else:
+                self.value = self._PRIORITY_MAPPING[jira_issue.fields.priority.name.lower()]
 
     def __str__(self):
         if self.value != self.DEFAULT_VALUE:
