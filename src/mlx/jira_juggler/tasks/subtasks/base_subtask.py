@@ -9,7 +9,3 @@ class BaseSubtask(JugglerTask):
         # self._inherit_priority()
         # self.properties['priority'].clear()
         self.properties['priority'].set_relatively_on(self.parent.properties['priority'].value)
-
-    def adjust_priority(self, extras):
-        super().adjust_priority(extras)
-        self.properties['priority'].set_relatively_on(self.parent.properties['priority'].value)

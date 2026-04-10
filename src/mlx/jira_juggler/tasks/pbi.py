@@ -35,18 +35,3 @@ class BacklogItem(JugglerTask):
         if not self.is_dor():
             milestone = "${sprint_non_dor}"
         super().shift_unstarted_tasks_to_milestone(milestone)
-
-    def adjust_priority(self, extras):
-        priority = None
-        if self.key in extras:
-            priority = extras[self.key].priority
-        if priority is not None:
-            self.properties['priority'].value = priority
-            if self.children:
-                for child in self.children:
-                    child.adjust_priority(extras)
-        # elif not self.is_dor() and self.todo():
-        #     self.properties['priority'].value = 1
-        elif self.children:
-            for child in self.children:
-                child.adjust_priority(extras)
