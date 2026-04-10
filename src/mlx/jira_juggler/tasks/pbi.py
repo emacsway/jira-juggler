@@ -30,8 +30,3 @@ class BacklogItem(JugglerTask):
         if not self.properties['time'].is_empty and self.properties['time'].name == 'fact:start' and self.todo():
             # Actually the PBI is not started yet.
             self.properties['time'].clear()
-
-    def shift_unstarted_tasks_to_milestone(self, milestone):
-        if not self.is_dor():
-            milestone = "${sprint_non_dor}"
-        super().shift_unstarted_tasks_to_milestone(milestone)

@@ -219,12 +219,6 @@ task {id} "{description}" {{
             for child in self.children:
                 child.shift_unstarted_tasks_to_milestone(milestone)
 
-    def is_dor(self):
-        if self.children:
-            return any(child.is_dor() for child in self.children)  # all()?
-        else:
-            return not self.properties['effort'].is_empty
-
     def todo(self):
         if self.children:
             return all(child.todo() for child in self.children)
