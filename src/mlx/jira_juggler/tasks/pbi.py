@@ -31,10 +31,10 @@ class BacklogItem(JugglerTask):
             # Actually the PBI is not started yet.
             self.properties['time'].clear()
 
-    def shift_unstarted_tasks_to_milestone(self, extras, milestone):
+    def shift_unstarted_tasks_to_milestone(self, milestone):
         if not self.is_dor():
             milestone = "${sprint_non_dor}"
-        super().shift_unstarted_tasks_to_milestone(extras, milestone)
+        super().shift_unstarted_tasks_to_milestone(milestone)
 
     def adjust_priority(self, extras):
         priority = None

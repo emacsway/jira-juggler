@@ -292,7 +292,8 @@ class JiraJuggler:
             JugglerTask.sprint_accessor = staticmethod(SprintAccessor(
                 kwargs['sprint_field_name'],
                 sprint_re_pattern,
-                sprint_re_repl
+                sprint_re_repl,
+                self._extras
             ))
 
         juggler_tasks = self.load_issues_from_jira(**kwargs)
@@ -312,7 +313,7 @@ class JiraJuggler:
 
             collector = Registry()
             for task in juggler_tasks:
-                task.shift_unstarted_tasks_to_milestone(extras, kwargs['milestone'])
+                task.shift_unstarted_tasks_to_milestone(kwargs['milestone'])
                 # task.collect_todo_tasks(collector)
             if False and output:
                 path = Path(output)
@@ -491,7 +492,7 @@ def main():
     argpar.add_argument('-w', '--weeklymax', default=5, type=int,
                         help='Number of allocated workdays per week used to approximate '
                              'start time of unresolved tasks with logged time')
-    argpar.add_argument('-c', '--current-date', default=datetime.datetime.now(tz.tzutc()), type=parser.isoparse,
+    argpar.add_argument('-c', '--current-date', default=datetime.datetime.now(tz.tzutc()).replace(minute=0, second=0, microsecond=0), type=parser.isoparse,
                         help='Specify the offset-naive date to use for calculation as current date. If no value is '
                              'specified, the current value of the system clock is used.')
     argpar.add_argument('-m', '--milestone', required=False,

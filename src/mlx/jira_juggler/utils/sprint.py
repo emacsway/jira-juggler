@@ -22,13 +22,24 @@ class SprintAccessor:
         "CLOSED": 1,
     }
 
-    def __init__(self, sprint_field_name, sprint_re_pattern, sprint_re_repl):
+    def __init__(
+            self,
+            sprint_field_name: str,
+            sprint_re_pattern: str,
+            sprint_re_repl: str,
+            extras: dict
+    ):
         self._sprint_field_name = sprint_field_name
         self._pattern = re.compile(sprint_re_pattern)
         self._sprint_re_repl = sprint_re_repl
+        self._extras = extras
 
     def __call__(self, jira_issue: jira.Issue):
         sprint = Sprint("", 0, None)
+        if jira_issue.key in self._extras:
+            sprint_name = self._extras[jira_issue.key].sprint
+            if sprint_name is not None:
+                return Sprint(sprint_name, 0, None)
         values = getattr(jira_issue.fields, self._sprint_field_name, None)
         if values is not None:
             if isinstance(values, str):

@@ -21,9 +21,9 @@ class Epic(JugglerTask):
             self.properties['time'].clear()
 
 
-    def shift_unstarted_tasks_to_milestone(self, extras, milestone):
+    def shift_unstarted_tasks_to_milestone(self, milestone):
         for child in self.children:
-            child.shift_unstarted_tasks_to_milestone(extras, milestone)
+            child.shift_unstarted_tasks_to_milestone(milestone)
 
     def collect_todo_tasks(self, collector: Registry):
         for child in self.children:

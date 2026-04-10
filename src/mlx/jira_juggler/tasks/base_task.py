@@ -197,35 +197,27 @@ task {id} "{description}" {{
                         closed_at_date = parser.isoparse(change.created)
         return closed_at_date
 
-    def shift_unstarted_tasks_to_milestone(self, extras, milestone):
-        sprint = self.get_sprint(extras)
-        if sprint:
+    def shift_unstarted_tasks_to_milestone(self, milestone):
+        sprint = getattr(self, 'sprint', None)
+        if sprint is not None and sprint.name:
             if self.time_is_empty():
-                self.properties['fact:depends'].append_value(sprint)
+                self.properties['fact:depends'].append_value(sprint.name)
             elif self.children:
                 for child in self.children:
-                    child.shift_unstarted_tasks_to_milestone(extras, sprint)
+                    child.shift_unstarted_tasks_to_milestone(sprint.name)
             """
-            self.properties['fact:depends'].append_value(sprint)
+            self.properties['fact:depends'].append_value(sprint.name)
             if not self.time_is_empty() and self.in_progress():
                 for child in self.children:
                     if child.time_is_empty():
-                        child.shift_unstarted_tasks_to_milestone(extras, milestone)
-                        # child.shift_unstarted_tasks_to_milestone(extras, sprint)
+                        child.shift_unstarted_tasks_to_milestone(milestone)
+                        # child.shift_unstarted_tasks_to_milestone(sprint.name)
             """
         elif self.time_is_empty():
             self.properties['fact:depends'].append_value(milestone)
         elif self.children:
             for child in self.children:
-                child.shift_unstarted_tasks_to_milestone(extras, milestone)
-
-    def get_sprint(self, extras):
-        sprint = None
-        if self.key in extras:
-            sprint = extras[self.key].sprint
-        if not sprint and getattr(self, 'sprint', None):
-            sprint = getattr(self, 'sprint').name
-        return sprint
+                child.shift_unstarted_tasks_to_milestone(milestone)
 
     def is_dor(self):
         if self.children:
