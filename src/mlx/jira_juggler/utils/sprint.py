@@ -1,3 +1,5 @@
+import datetime
+import enum
 import logging
 import re
 
@@ -8,19 +10,32 @@ from dateutil import parser
 __all__ = ('Sprint', 'SprintAccessor',)
 
 
+class SprintState(enum.Enum):
+    ACTIVE = "ACTIVE"
+    FUTURE = "FUTURE"
+    CLOSED = "CLOSED"
+    UNDEFINED = "UNDEFINED"
+
+
 class Sprint:
-    def __init__(self, name, priority, start_date):
+    priorities = {
+        SprintState.ACTIVE: 3,
+        SprintState.FUTURE: 2,
+        SprintState.CLOSED: 1,
+        SprintState.UNDEFINED: 0,
+    }
+
+    def __init__(self, name: str, state: SprintState, start_date: datetime.datetime | None):
         self.name = name
-        self.priority = priority
+        self.state = state
         self.start_date = start_date
+
+    @property
+    def priority(self):
+        return self.priorities[self.state]
 
 
 class SprintAccessor:
-    _priorities = {
-        "ACTIVE": 3,
-        "FUTURE": 2,
-        "CLOSED": 1,
-    }
 
     def __init__(
             self,
@@ -35,43 +50,42 @@ class SprintAccessor:
         self._extras = extras
 
     def __call__(self, jira_issue: jira.Issue):
-        sprint = Sprint("", 0, None)
+        sprint = Sprint("", SprintState.UNDEFINED, None)
         if jira_issue.key in self._extras:
             sprint_name = self._extras[jira_issue.key].sprint
             if sprint_name is not None:
-                return Sprint(sprint_name, 0, None)
+                return Sprint(sprint_name, SprintState.UNDEFINED, None)
         values = getattr(jira_issue.fields, self._sprint_field_name, None)
         if values is not None:
             if isinstance(values, str):
                 values = [values]
             for sprint_info in values:
-                state = ""
                 if isinstance(sprint_info, (str, bytes)):  # Jira Server
-                    state_match = re.search("state=({})".format("|".join(self._priorities)), sprint_info)
+                    state_match = re.search("state=({})".format("|".join([k.value for k in Sprint.priorities])), sprint_info)
                     if state_match:
-                        state = state_match.group(1)
-                        prio = self._priorities[state]
+                        state = SprintState(state_match.group(1))
+                        prio = Sprint.priorities[state]
                         if prio > sprint.priority:
                             name = re.search("name=(.+?),", sprint_info).group(1)
                             if self._pattern.fullmatch(name):
                                 name = self._pattern.sub(self._sprint_re_repl, name)
                                 sprint = Sprint(
                                     name,
-                                    prio,
+                                    state,
                                     self._extract_start_date(sprint_info, jira_issue.key)
                                 )
 
                 else:  # Jira Cloud
-                    state = sprint_info.state.upper()
-                    if state in self._priorities:
-                        prio = self._priorities[state]
+                    state = SprintState(sprint_info.state.upper())
+                    if state in Sprint.priorities:
+                        prio = Sprint.priorities[state]
                         if prio > sprint.priority:
                             name = sprint_info.name
                             if self._pattern.fullmatch(name):
                                 name = self._pattern.sub(self._sprint_re_repl, name)
                                 sprint = Sprint(
                                     name,
-                                    prio,
+                                    state,
                                     parser.parse(sprint_info.startDate) if hasattr(sprint_info, 'startDate') else None
                                 )
         return sprint
