@@ -402,14 +402,20 @@ task {id} "{description}" {{
         if self.children:
             for child in self.children:
                 child.shift_in_progress_to(current_date)
-        elif not self.time_is_empty():
-            progress = self.properties["complete"].value
-            if 0 < progress < 100:
+            return
+        sprint = getattr(self, "sprint", None)
+        if sprint is not None and sprint.name and sprint.state == SprintState.ACTIVE:
+            if self.time_is_empty():
                 self.properties["time"].name = "fact:start"
-                days_spent = self.properties["effort"].value / self.focus_factor
-                self.properties["time"].value = self.add_working_days(
-                    current_date, -days_spent
-                )
+                self.properties["time"].value = current_date
+            elif not self.time_is_empty():
+                progress = self.properties["complete"].value
+                if 0 < progress < 100:
+                    self.properties["time"].name = "fact:start"
+                    days_spent = self.properties["effort"].value / self.focus_factor
+                    self.properties["time"].value = self.add_working_days(
+                        current_date, -days_spent
+                    )
 
     def sort(self, *, key=None, reverse=False):
         if self.children:
