@@ -28,23 +28,23 @@ class Sprint:
     def __init__(
             self,
             name: str,
-            state: SprintState,
-            start_date: datetime.datetime | None,
-            end_date: datetime.datetime | None
+            state: SprintState = SprintState.UNDEFINED,
+            start: datetime.datetime | None = None,
+            end: datetime.datetime | None = None  # FIXME: Remove me?
     ):
         self.name = name
         self.state = state
-        self.start_date = start_date
-        self.end_date = end_date
+        self.start = start
+        self.end = end
 
     @property
     def priority(self):
         return self.priorities[self.state]
 
     def __contains__(self, dt: datetime.datetime) -> bool:
-        if self.start_date is None or self.end_date is None:
+        if self.start is None or self.end is None:
             return False
-        return self.start_date <= dt < self.end_date
+        return self.start <= dt < self.end
 
 
 class SprintAccessor:
@@ -63,11 +63,11 @@ class SprintAccessor:
         self._sprint_length = datetime.timedelta(weeks=2)
 
     def __call__(self, jira_issue: jira.Issue):
-        sprint = Sprint("", SprintState.UNDEFINED, None, None)
+        sprint = Sprint("")
         if jira_issue.key in self._extras:
             sprint_name = self._extras[jira_issue.key].sprint
             if sprint_name is not None:
-                return Sprint(sprint_name, SprintState.UNDEFINED, None, None)
+                return Sprint(sprint_name)
         values = getattr(jira_issue.fields, self._sprint_field_name, None)
         if values is not None:
             if isinstance(values, str):

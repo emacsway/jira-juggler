@@ -32,7 +32,7 @@ from mlx.jira_juggler.tasks.properties.registry import Registry
 from mlx.jira_juggler.utils.add_working_days import AddWorkingDays
 from mlx.jira_juggler.utils.auth import fetch_credentials
 from mlx.jira_juggler.utils.identifier import to_identifier
-from mlx.jira_juggler.utils.sprint import SprintAccessor
+from mlx.jira_juggler.utils.sprint import Sprint, SprintAccessor
 from mlx.jira_juggler.utils.user import ToUsername
 
 DEFAULT_LOGLEVEL = 'warning'
@@ -313,7 +313,7 @@ class JiraJuggler:
 
             collector = Registry()
             for task in juggler_tasks:
-                task.shift_unstarted_tasks_to_milestone(kwargs['milestone'])
+                task.shift_unstarted_tasks_to_milestone(Sprint(kwargs['milestone']))
                 # task.collect_todo_tasks(collector)
             if False and output:
                 path = Path(output)
@@ -434,9 +434,9 @@ supplement task %(id)s {
             return 1
         if a.sprint.priority == 0 or a.sprint.name == b.sprint.name:
             return 0  # no/same sprint associated with both issues
-        if type(a.sprint.start_date) != type(b.sprint.start_date):  # noqa
-            return -1 if b.sprint.start_date is None else 1
-        if a.sprint.start_date == b.sprint.start_date:
+        if type(a.sprint.start) != type(b.sprint.start):  # noqa
+            return -1 if b.sprint.start is None else 1
+        if a.sprint.start == b.sprint.start:
             # a sprint with backlog in its name has lower priority
             if "backlog" not in a.sprint.name.lower() and "backlog" in b.sprint.name.lower():
                 return -1
@@ -445,7 +445,7 @@ supplement task %(id)s {
             if natsorted([a.sprint.name, b.sprint.name], alg=ns.IGNORECASE)[0] == a.sprint.name:
                 return -1
             return 1
-        if a.sprint.start_date < b.sprint.start_date:
+        if a.sprint.start < b.sprint.start:
             return -1
         return 1
 
