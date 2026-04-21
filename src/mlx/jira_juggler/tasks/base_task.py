@@ -246,6 +246,7 @@ task {id} "{description}" {{
         sprint = getattr(self, "sprint", None)
         if sprint is None or not sprint.name:
             sprint = milestone
+        sprint = milestone
         if self.time_is_empty():
             self.properties["fact:depends"].append_value(sprint.name)
         # elif sprint.state == SprintState.ACTIVE and self.starts_after_sprint_start(
