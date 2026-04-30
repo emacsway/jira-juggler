@@ -38,6 +38,7 @@ class JugglerTask:
         EPIC = "Epic"
         SPIKE = "Spike"
         STORY = "Story"
+        TASK = "Task"
         DEFECT = "Bug"
         SUBTASK = "Sub-task"
         IMPROVEMENT = "Improvement"
@@ -52,6 +53,7 @@ class JugglerTask:
     DEFAULT_SUMMARY = "Task is not initialized"
     TEMPLATE = """
 task {id} "{description}" {{
+{tab}Type "{type}"
 {tab}Key "{key}"
 {props}
 {children}
@@ -191,6 +193,7 @@ task {id} "{description}" {{
         result = self.TEMPLATE.format(
             id=to_identifier(self.key),
             key=self.key,
+            type=self.type,
             tab=TAB,
             description=self.summary.replace('"', '\\"'),
             props=props,
