@@ -3,15 +3,21 @@ from _operator import attrgetter
 import jira
 
 from mlx.jira_juggler.tasks.properties.base_property import JugglerTaskProperty
-from mlx.jira_juggler.tasks.properties.constants import DONE_STATUSES, PENDING_STATUSES, RESOLVED_STATUSES, TAB
+from mlx.jira_juggler.tasks.properties.constants import (
+    DONE_STATUSES,
+    PENDING_STATUSES,
+    PROGRESS_STATUSES,
+    RESOLVED_STATUSES,
+    TAB,
+)
 
-__all__ = ('JugglerTaskAllocate',)
+__all__ = ("JugglerTaskAllocate",)
 
 
 class JugglerTaskAllocate(JugglerTaskProperty):
     """Class for the allocation (assignee) of a juggler task"""
 
-    DEFAULT_NAME = 'allocate'
+    DEFAULT_NAME = "allocate"
     DEFAULT_VALUE = '"not assigned"'
 
     def __init__(self, to_username, jira_issue: jira.Issue | None = None):
@@ -27,30 +33,37 @@ class JugglerTaskAllocate(JugglerTaskProperty):
         Args:
             jira_issue (jira.resources.Issue): The Jira issue to load from
         """
-        if jira_issue.fields.status.name.lower() in DONE_STATUSES + PENDING_STATUSES + RESOLVED_STATUSES:
-            before_resolved = False
-            for change in sorted(jira_issue.changelog.histories, key=attrgetter('created'), reverse=True):
+        if (
+            jira_issue.fields.status.name.lower()
+            in DONE_STATUSES + PENDING_STATUSES + RESOLVED_STATUSES
+        ):
+            implemented = True
+            changes = sorted(
+                jira_issue.changelog.histories, key=attrgetter("created"), reverse=True
+            )
+            for change in changes:
                 for item in change.items:
-                    if item.field.lower() == 'assignee':
-                        if not before_resolved:
-                            self.value = getattr(item, 'from', None)
+                    if item.field.lower() == "assignee":
+                        if implemented:
+                            self.value = getattr(item, "from", None)
                             if self.value:
                                 self.value = self._to_username(self.value)
                         else:
                             self.value = self._to_username(item.to)
                             return  # got last assignee before transition to Approved/Resolved status
-                    elif item.field.lower() == 'status' and item.toString.lower() in RESOLVED_STATUSES:
-                        before_resolved = True
-                        # if self.value and self.value != self.DEFAULT_VALUE:
-                        #     return  # assignee was changed after transition to Closed/Resolved status
+                    elif (
+                        item.field.lower() == "status"
+                        and item.fromString.lower() in PROGRESS_STATUSES
+                    ):
+                        implemented = False
 
         if self.is_empty:
-            if getattr(jira_issue.fields, 'assignee', None):
+            if getattr(jira_issue.fields, "assignee", None):
                 self.value = self._to_username(jira_issue.fields.assignee)
             else:
                 self.value = self.DEFAULT_VALUE
 
     def __str__(self):
         result = super().__str__().rstrip("\n")
-        result += """ {\n%(tab)s%(tab)smandatory\n%(tab)s}\n""" % {'tab': TAB}
+        result += """ {\n%(tab)s%(tab)smandatory\n%(tab)s}\n""" % {"tab": TAB}
         return result
